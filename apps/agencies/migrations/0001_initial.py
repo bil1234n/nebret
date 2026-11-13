@@ -147,7 +147,7 @@ class Migration(migrations.Migration):
                     "is_verified",
                     models.BooleanField(
                         default=False,
-                        help_text="Licence and documents checked by Nebret Equb",
+                        help_text="Licence and documents checked by Nebret",
                     ),
                 ),
                 (
@@ -182,7 +182,7 @@ class Migration(migrations.Migration):
                     models.DecimalField(
                         decimal_places=2,
                         default=apps.agencies.models.default_commission,
-                        help_text="Nebret Equb's commission on every sale, taken from the company's share.",
+                        help_text="Nebret's commission on every sale, taken from the company's share.",
                         max_digits=5,
                         validators=[
                             django.core.validators.MinValueValidator(Decimal("0")),
@@ -211,7 +211,7 @@ class Migration(migrations.Migration):
                     "notes",
                     models.TextField(
                         blank=True,
-                        help_text="Internal notes (only Nebret Equb staff see these)",
+                        help_text="Internal notes (only Nebret staff see these)",
                     ),
                 ),
                 (

@@ -56,7 +56,7 @@ class EqubSettings(models.Model):
     grace_days = models.PositiveSmallIntegerField(default=3, help_text="Days after the due date before a payment is late.")
     require_paid_to_draw = models.BooleanField(default=True, help_text="Only members paid up for the round enter its draw.")
     payout_basis = models.CharField(max_length=10, default="FULL_POT",
-                                    choices=[("FULL_POT", "Full pot – Nebret Equb guarantees the payout"),
+                                    choices=[("FULL_POT", "Full pot – Nebret guarantees the payout"),
                                              ("COLLECTED", "Only what was collected by draw day")],
                                     help_text="What each winner receives.")
     auto_start_when_full = models.BooleanField(default=True, help_text="Start an Equb as soon as all its places are taken.")
@@ -209,7 +209,7 @@ class EqubPackage(TimeStampedModel):
 
 class EqubGroup(TimeStampedModel):
     """
-    A rotating savings circle (ዕቁብ) created from an Equb package. On Nebret Equb each winner's payout can be
+    A rotating savings circle (ዕቁብ) created from an Equb package. On Nebret each winner's payout can be
     spent straight on a car, house, apartment, plot or e-bike in the marketplace (or paid out in cash).
     """
 
@@ -232,7 +232,7 @@ class EqubGroup(TimeStampedModel):
         CANCELLED = "CANCELLED", "Cancelled"
 
     class PayoutBasis(models.TextChoices):
-        FULL_POT = "FULL_POT", "Full pot – Nebret Equb guarantees the payout"
+        FULL_POT = "FULL_POT", "Full pot – Nebret guarantees the payout"
         COLLECTED = "COLLECTED", "Only what was collected by draw day"
 
     equb_package = models.ForeignKey(EqubPackage, null=True, blank=True, on_delete=models.PROTECT,
@@ -253,6 +253,12 @@ class EqubGroup(TimeStampedModel):
     rounds_drawn = models.PositiveSmallIntegerField(
         "Rounds drawn", null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(10000)],
         help_text="How many draws the Equb has. Members ÷ rounds = winners in each draw. Empty = one draw per member.")
+
+    kyc_after_payments = models.PositiveSmallIntegerField(
+        "Profile form after (payments)", default=3,
+        help_text="After this many paid rounds a member must send their photo, national ID and monthly income to "
+                  "stay in the draws. 0 = ask before the first draw; leave 3 for the usual rule.")
+    require_kyc = models.BooleanField("Ask members for photo, ID and income", default=True)
 
     service_fee_override = models.DecimalField(
         "Service fee (%)", max_digits=4, decimal_places=2, null=True, blank=True,
@@ -296,7 +302,8 @@ class EqubGroup(TimeStampedModel):
 
     @property
     def late_fee(self) -> Decimal:
-        return self.rules.late_fee
+        """No late penalty is ever charged (a penalty on a late payment is riba)."""
+        return Decimal("0")
 
     @property
     def grace_days(self) -> int:
@@ -533,7 +540,7 @@ class GroupEqub(TimeStampedModel):
 
 class GroupEqubInvite(TimeStampedModel):
     """
-    The owner asks a Nebret Equb customer (found by phone number) to join the group. Nothing happens until the
+    The owner asks a Nebret customer (found by phone number) to join the group. Nothing happens until the
     person accepts; then they get their own place in the Equb and pay their own contributions.
     """
 

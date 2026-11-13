@@ -1,5 +1,5 @@
 """
-Nebret Equb marketplace.
+Nebret marketplace.
 
 Partner companies (real-estate developers, car dealers, e-bike & electronics sellers) publish **listings** in a
 **category**. Every sellable item is a **unit** (apartment 3B, a car with its VIN, one e-bike from a batch of 40), so
@@ -101,7 +101,7 @@ class Listing(TimeStampedModel):
         RENOVATED = "RENOVATED", "Renovated"
 
     company = models.ForeignKey("agencies.Agency", null=True, blank=True, on_delete=models.PROTECT,
-                                related_name="listings", help_text="Partner company selling it (empty = Nebret Equb)")
+                                related_name="listings", help_text="Partner company selling it (empty = Nebret)")
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="listings")
     title = models.CharField(max_length=140)
     slug = models.SlugField(max_length=160, unique=True, blank=True)
@@ -199,7 +199,7 @@ class Listing(TimeStampedModel):
 
     @property
     def seller_name(self) -> str:
-        return self.company.name if self.company_id else "Nebret Equb"
+        return self.company.name if self.company_id else "Nebret"
 
     def payment_plans(self) -> list[str]:
         out = []

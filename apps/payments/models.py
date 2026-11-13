@@ -24,7 +24,7 @@ class PaymentTransaction(TimeStampedModel):
         ORDER = "ORDER", "Marketplace order (full payment / deposit)"
         INSTALLMENT = "INSTALLMENT", "Marketplace installment"
         EQUB_CONTRIBUTION = "EQUB_CONTRIBUTION", "Equb contribution"
-        DONATION = "DONATION", "Crowdfunding donation (Sadaqah / Hibah)"
+        DONATION = "DONATION", "Crowdfunding donation"
         MICRO_DONATION = "MICRO_DONATION", "Old lucky-draw entry (retired)"
 
     class Status(models.TextChoices):
@@ -65,11 +65,11 @@ class PaymentTransaction(TimeStampedModel):
                                     related_name="+", help_text="Staff member who recorded an office payment")
     refunded_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
-    # Partner-company sales: the company keeps the rest, Nebret Equb keeps ``platform_fee``.
+    # Partner-company sales: the company keeps the rest, Nebret keeps ``platform_fee``.
     agency = models.ForeignKey("agencies.Agency", null=True, blank=True, on_delete=models.PROTECT,
                                related_name="payments", help_text="Partner company this sale belongs to")
     platform_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
-                                       help_text="Nebret Equb's commission on a company sale")
+                                       help_text="Nebret's commission on a company sale")
     split_settled = models.BooleanField(default=False,
                                         help_text="Chapa paid the company's share directly (split payment)")
 

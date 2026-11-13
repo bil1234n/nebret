@@ -14,7 +14,7 @@ from apps.core.exceptions import BusinessRuleError
 
 
 class Command(BaseCommand):
-    help = ("Expire unpaid marketplace orders and stale unit holds, add installment late fees and reminders, send "
+    help = ("Expire unpaid marketplace orders and stale unit holds, flag late installments and send reminders, send "
             "calendar (scheduled) Equb payments, flag late Equb contributions, send Equb reminders and standing notices, "
             "run due draws.")
 

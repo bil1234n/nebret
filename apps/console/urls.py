@@ -73,6 +73,7 @@ urlpatterns = [
     path("customers/<int:pk>/deletion/", views.deletion_decide, name="deletion_decide"),
     path("customers/<int:pk>/", views.user_detail, name="user"),
     path("customers/<int:pk>/edit/", views.user_edit, name="user_edit"),
+    path("customers/<int:pk>/kyc/<str:which>.jpg", views.kyc_photo, name="kyc_photo"),
     path("settings/", m.settings_page, name="settings"),
     path("app/", m.app_content, name="app_content"),
     path("app/banners/new/", m.banner_form, name="banner_add"),

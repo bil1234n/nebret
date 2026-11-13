@@ -109,14 +109,15 @@ class EqubForm(StyledMixin, forms.ModelForm):
         label="Price per person", required=False, disabled=True,
         help_text="Contribution Amount × Duration Value – what each member (winners too) pays in total.")
     sections = [("", "", ["equb_package", "name", "contribution_amount", "duration_value",
-                          "duration_unit", "price_per_person", "max_members", "rounds_drawn", "service_fee_override",
+                          "duration_unit", "price_per_person", "max_members", "rounds_drawn", "require_kyc", "kyc_after_payments",
+                          "service_fee_override",
                           "start_date", "end_date", "status", "draw_type", "rules_text"])]
     create_another = True
 
     class Meta:
         model = EqubGroup
         fields = ["equb_package", "name", "contribution_amount", "max_members", "rounds_drawn",
-                  "service_fee_override", "duration_value", "duration_unit", "start_date", "end_date", "rules_text",
+                  "require_kyc", "kyc_after_payments", "service_fee_override", "duration_value", "duration_unit", "start_date", "end_date", "rules_text",
                   "status", "draw_type"]
         labels = {"equb_package": "Equb Package", "name": "Name", "contribution_amount": "Contribution Amount",
                   "rounds_drawn": "Rounds Drawn",
@@ -316,16 +317,16 @@ class AddMemberForm(StyledMixin, forms.Form):
 class CustomerForm(StyledMixin, forms.ModelForm):
     """Staff edit a customer's profile and, for customers registered at the desk, set their password."""
 
-    new_password = forms.CharField(label="New password", required=False, min_length=6,
+    new_password = forms.CharField(label="New PIN (6 digits)", required=False, min_length=6, max_length=6,
                                    widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
-                                   help_text="Leave empty to keep the current password.")
-    confirm_password = forms.CharField(label="Confirm password", required=False,
+                                   help_text="The customer signs in to the app with their phone and this PIN. Leave empty to keep the current one.")
+    confirm_password = forms.CharField(label="Confirm PIN", required=False,
                                        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}))
     sections = [
         ("Profile", "", ["full_name", "phone", "email", "preferred_language", "date_of_birth", "is_active"]),
         ("Buyer details", "Used on sale contracts and to fill in orders.",
          ["national_id", "city", "address"]),
-        ("Password", "Give the customer a password so they can sign in to the app with their phone number.",
+        ("App PIN", "Give the customer a 6-digit PIN so they can sign in to the app with their phone number.",
          ["new_password", "confirm_password"]),
     ]
 
@@ -348,11 +349,11 @@ class CustomerForm(StyledMixin, forms.ModelForm):
         p1, p2 = d.get("new_password") or "", d.get("confirm_password") or ""
         if p1 or p2:
             if p1 != p2:
-                self.add_error("confirm_password", "The two passwords don't match.")
+                self.add_error("confirm_password", "The two PINs don't match.")
             else:
-                from django.contrib.auth import password_validation
+                from apps.accounts.models import validate_pin
                 try:
-                    password_validation.validate_password(p1, self.instance)
+                    validate_pin(p1)
                 except ValidationError as e:
                     self.add_error("new_password", e)
         return d
@@ -397,7 +398,7 @@ class DrawSettingsForm(StyledMixin, forms.ModelForm):
 
 class EqubRulesForm(StyledMixin, forms.ModelForm):
     sections = [
-        ("Money rules", "Apply to every Equb.", ["service_fee_percent", "late_fee", "grace_days", "payout_basis",
+        ("Money rules", "Apply to every Equb.", ["service_fee_percent", "grace_days", "payout_basis",
                                                  "require_paid_to_draw", "auto_start_when_full"]),
         ("When is a member behind?", "Counted in unpaid rounds (a round is unpaid once its due date and the pool's grace days have passed).",
          ["warn_at", "block_at", "suspend_at", "auto_flag_for_termination"]),
@@ -409,11 +410,11 @@ class EqubRulesForm(StyledMixin, forms.ModelForm):
 
     class Meta:
         model = EqubSettings
-        fields = ["service_fee_percent", "late_fee", "grace_days", "payout_basis", "require_paid_to_draw",
+        fields = ["service_fee_percent", "grace_days", "payout_basis", "require_paid_to_draw",
                   "auto_start_when_full", "warn_at", "block_at", "suspend_at", "auto_flag_for_termination",
                   "min_paid_rounds_to_win", "max_advance_rounds", "pending_payment_minutes", "reminder_days_before",
                   "send_overdue_notices", "call_after_days", "terminate_after_days"]
-        labels = {"service_fee_percent": "Service fee (%)", "late_fee": "Late fee (ETB)", "grace_days": "Grace days",
+        labels = {"service_fee_percent": "Service fee (%)", "grace_days": "Grace days",
                   "payout_basis": "Winner receives", "require_paid_to_draw": "Only paid-up members enter the draw",
                   "auto_start_when_full": "Start an Equb automatically when it is full",
                   "warn_at": "Warn after (unpaid rounds)", "block_at": "Leave out of draws after (unpaid rounds)",
@@ -438,11 +439,11 @@ class EqubRulesForm(StyledMixin, forms.ModelForm):
 
 # ----------------------------------------------------------------- community finance & impact
 class CrowdfundingForm(StyledMixin, forms.ModelForm):
-    """Crowdfunding Hub (Sadaqah / Hibah): the gift goes 100% to the cause, the platform fee is added on top."""
+    """Crowdfunding Hub (donations): the gift goes 100% to the cause, the platform fee is added on top."""
 
     sections = [
         ("Campaign", "", ["title", "category", "story", "image_url", "is_featured"]),
-        ("Who is helped", "Donors see the beneficiary's name. Link their Nebret Equb account to notify them of each gift.",
+        ("Who is helped", "Donors see the beneficiary's name. Link their Nebret account to notify them of each gift.",
          ["beneficiary_name", "beneficiary", "goal_amount"]),
         ("Giving", "Every gift goes 100% to the campaign. The platform fee is a separate amount the donor pays on top "
                    "(100 ETB gift + 5% = 105 ETB at checkout).", ["platform_fee_percent", "min_donation"]),
@@ -455,7 +456,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
                   "goal_amount", "platform_fee_percent", "min_donation", "starts_at", "ends_at", "status"]
         labels = {"goal_amount": "Goal (ETB)", "platform_fee_percent": "Platform fee added on top (%)",
                   "min_donation": "Smallest gift (ETB)", "is_featured": "Feature on the app home screen",
-                  "image_url": "Image URL", "beneficiary": "Beneficiary's Nebret Equb account", "story": "Story"}
+                  "image_url": "Image URL", "beneficiary": "Beneficiary's Nebret account", "story": "Story"}
         widgets = {"starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
                    "ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")}
 
@@ -498,7 +499,7 @@ class DisbursementForm(StyledMixin, forms.Form):
 
 
 class GiveawayForm(StyledMixin, forms.ModelForm):
-    """Community Giveaway: 100% paid by Nebret Equb or a sponsor. Entry is free – earned only by inviting friends."""
+    """Community Giveaway: 100% paid by Nebret or a sponsor. Entry is free – earned only by inviting friends."""
 
     sections = [
         ("Giveaway", "", ["title", "description", "image_url", "is_featured"]),
@@ -506,7 +507,7 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
          ["sponsor_type", "sponsor_name", "sponsor_note", "sponsor_logo_url"]),
         ("Prize", "Winners receive this as credit on a marketplace order or as paid Equb contributions.",
          ["prize_type", "prize_title", "prize_value", "number_of_winners", "prize_listing", "prize_equb_group"]),
-        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on Nebret Equb "
+        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on Nebret "
                          "with their referral code while the giveaway is running.", ["referrals_per_entry", "max_entries_per_user"]),
         ("Schedule", "", ["starts_at", "ends_at", "draw_at", "status"]),
     ]
@@ -534,7 +535,7 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
             now = timezone.localtime().replace(second=0, microsecond=0)
             self.initial.update(starts_at=now, ends_at=now + timedelta(days=21), draw_at=now + timedelta(days=21, hours=1),
                                 referrals_per_entry=settings.NEBRET["REFERRALS_PER_GIVEAWAY_ENTRY"], status="LIVE",
-                                sponsor_name="Nebret Equb")
+                                sponsor_name="Nebret")
         elif self.instance.entries_issued:
             self.disable("prize_type", "prize_value", "number_of_winners", "referrals_per_entry", "starts_at",
                          reason="Fixed after the first entry was earned.")

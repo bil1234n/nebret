@@ -19,8 +19,8 @@
       {% if a.bank_code and a.account_number and a.account_name %}
       <form method="post" style="margin-top:12px" data-confirm="Register {{ a.account_name }} · {{ a.account_number }} with Chapa? Chapa will then send {{ a.name }} its share of every online sale automatically.">{% csrf_token %}<input type="hidden" name="action" value="subaccount"><button class="btn">Create Chapa subaccount</button></form>
       {% else %}<p class="small muted">Add the company's bank, account holder and account number (<a href="{% url 'console:agency_edit' a.pk %}">Edit</a>), then create the subaccount.</p>{% endif %}
-      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to Nebret Equb and the company's share shows as owed below.</p>
-    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for Nebret Equb and settles the rest to this account.</p>{% endif %}
+      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to Nebret and the company's share shows as owed below.</p>
+    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for Nebret and settles the rest to this account.</p>{% endif %}
   </div>
   <div class="card"><div class="card-h"><h2>Company</h2>{{ a.status|status_badge:a.get_status_display }}</div>
     <dl class="kv"><dt>Business</dt><dd>{{ a.get_kind_display }}{% if a.is_verified %} <span class="badge b-green">Verified</span>{% endif %}</dd>
@@ -71,5 +71,11 @@
       {% for c in customers %}<div style="padding:6px 0;border-bottom:1px solid var(--line)"><a href="{% url 'console:user' c.user_id %}">{{ c.user.full_name }}</a> <span class="small muted mono">{{ c.user.phone }}</span></div>
       {% empty %}<div class="empty">No customers yet.</div>{% endfor %}</div>
   </div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Equb money collected by this company</h2><span>{{ equb_cash.count }} payment{{ equb_cash.count|pluralize }} · {{ equb_cash.total|money }} to hand over to Nebret</span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Receipt</th><th>Date</th><th>Member</th><th>Equb</th><th>Collected by</th><th class="r">Amount</th></tr></thead><tbody>
+  {% for p in equb_cash.recent %}<tr><td class="mono">{{ p.reference }}</td><td class="small">{{ p.paid_at|default:p.created_at|date:"d M Y, H:i" }}</td>
+    <td><a href="{% url 'console:equb_member' p.membership_id %}">{{ p.user.full_name }}</a></td><td>{{ p.membership.group.name }}</td><td>{{ p.recorded_by.full_name }}</td><td class="r num">{{ p.amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="empty">This company has not collected any Equb payment.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% endblock %}

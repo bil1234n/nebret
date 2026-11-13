@@ -248,7 +248,8 @@ def membership_detail(m: EqubMembership, request) -> dict:
         "payout": EqubPayoutSerializer(payout).data if payout else None, "current_round": current_data,
         "rules": {"warn_at": rules.warn_at, "block_at": rules.block_at, "suspend_at": rules.suspend_at,
                   "min_paid_rounds_to_win": rules.min_paid_rounds_to_win, "max_advance_rounds": rules.max_advance_rounds},
-        "rules_summary": rules_summary(g, rules),
+        "rules_summary": [],  # the joining agreement is the group's Terms Content (terms_document)
+        "kyc": services.kyc_info(m, st.paid_rounds),
     }
 
 
@@ -425,7 +426,7 @@ class GroupEqubViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["get"], url_path="lookup-phone")
     def lookup_phone(self, request):
-        """Is this full phone number a Nebret Equb customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
+        """Is this full phone number a Nebret customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
         team = None
         if request.query_params.get("team"):
             team = self.get_queryset().filter(pk=request.query_params["team"]).first()

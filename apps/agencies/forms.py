@@ -1,4 +1,4 @@
-"""Forms for the company portal and for managing partner companies in the Nebret Equb console."""
+"""Forms for the company portal and for managing partner companies in the Nebret console."""
 from __future__ import annotations
 
 import json
@@ -18,9 +18,9 @@ class AgencyForm(StyledMixin, forms.ModelForm):
     owner_name = forms.CharField(label="Owner full name", max_length=150, required=False)
     owner_phone = forms.CharField(label="Owner phone", max_length=20, required=False,
                                   help_text="The owner signs in to the company portal with this number.")
-    owner_password = forms.CharField(label="Owner password", required=False, min_length=6,
-                                     widget=forms.PasswordInput(render_value=True),
-                                     help_text="At least 6 characters. Leave empty for an existing account.")
+    owner_password = forms.CharField(label="Owner PIN (6 digits)", required=False, min_length=6, max_length=6,
+                                     widget=forms.TextInput(attrs={"inputmode": "numeric", "maxlength": 6, "pattern": "[0-9]{6}", "autocomplete": "off"}),
+                                     help_text="The owner signs in to the app and the company portal with their phone and this PIN.")
     bank_code = forms.TypedChoiceField(label="Bank", coerce=int, required=False, empty_value=None)
 
     sections = [
@@ -29,7 +29,7 @@ class AgencyForm(StyledMixin, forms.ModelForm):
          ["description", "logo_url", "is_verified"]),
         ("Owner account", "The person who runs the company account. They can add their own sales team later.",
          ["owner_name", "owner_phone", "owner_password"]),
-        ("Commission & status", "Nebret Equb's commission is taken from every sale the company makes.",
+        ("Commission & status", "Nebret's commission is taken from every sale the company makes.",
          ["commission_percent", "status"]),
         ("Payout bank account", "Chapa sends the company's share of every sale here automatically, once the Chapa "
                                 "subaccount is created on the company's page.",
@@ -42,7 +42,7 @@ class AgencyForm(StyledMixin, forms.ModelForm):
         fields = ["name", "kind", "license_number", "tin", "phone", "email", "website", "city", "address",
                   "description", "logo_url", "is_verified", "commission_percent", "status", "bank_code",
                   "account_name", "account_number", "notes"]
-        labels = {"commission_percent": "Nebret Equb commission (%)", "account_name": "Account holder name",
+        labels = {"commission_percent": "Nebret commission (%)", "account_name": "Account holder name",
                   "is_verified": "Verified seller"}
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
 
@@ -217,8 +217,8 @@ class SaleForm(StyledMixin, forms.Form):
 class StaffForm(StyledMixin, forms.Form):
     full_name = forms.CharField(max_length=150)
     phone = forms.CharField(max_length=20, help_text="They sign in with this phone number.")
-    password = forms.CharField(min_length=6, widget=forms.PasswordInput(render_value=True), required=False,
-                               help_text="At least 6 characters. Leave empty if they already have an account.")
+    password = forms.CharField(label="PIN (6 digits)", min_length=6, max_length=6, required=False, widget=forms.TextInput(attrs={"inputmode": "numeric", "maxlength": 6, "pattern": "[0-9]{6}", "autocomplete": "off"}),
+                               help_text="They sign in with their phone and this PIN. Leave empty if they already have an account.")
     role = forms.ChoiceField(choices=[(AgencyStaff.Role.AGENT, "Sales agent"), (AgencyStaff.Role.MANAGER, "Manager")])
     sections = [("Team member", "", ["full_name", "phone", "password", "role"])]
 
@@ -227,8 +227,8 @@ class CustomerForm(StyledMixin, forms.Form):
     full_name = forms.CharField(max_length=150, help_text="As written on their national ID.")
     phone = forms.CharField(max_length=20, help_text="Their own mobile number, e.g. 0911 234 567.")
     email = forms.EmailField(required=False)
-    password = forms.CharField(required=False, min_length=6, widget=forms.PasswordInput(render_value=True),
-                               help_text="Optional – lets them sign in to the Nebret Equb app too.")
+    password = forms.CharField(label="App PIN (6 digits)", required=False, min_length=6, max_length=6, widget=forms.TextInput(attrs={"inputmode": "numeric", "maxlength": 6, "pattern": "[0-9]{6}", "autocomplete": "off"}),
+                               help_text="Optional – lets them sign in to the Nebret app with their phone and this PIN.")
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
     sections = [("Customer", "", ["full_name", "phone", "email", "password", "notes"])]
 

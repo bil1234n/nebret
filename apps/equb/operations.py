@@ -215,7 +215,7 @@ def terminate(m: EqubMembership, staff, *, reason: str, note: str = "", notify_m
         why = {"NON_PAYMENT": "because contributions were not paid", "MEMBER_REQUEST": "as you requested",
                "UNREACHABLE": "because we could not reach you"}.get(reason, "")
         notify(m.user, Notification.Kind.EQUB_REMINDER, f"Your place in {m.group.name} was cancelled",
-               f"Your Equb place has been cancelled {why}".strip() + ". Please contact Nebret Equb support "
+               f"Your Equb place has been cancelled {why}".strip() + ". Please contact Nebret support "
                "about any contributions you have paid or still owe.", {"equb": m.group.slug, "membership": m.id})
     return t
 

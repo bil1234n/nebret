@@ -28,7 +28,7 @@ class CrowdfundingCampaignSerializer(serializers.ModelSerializer):
 
 class DonateSerializer(serializers.Serializer):
     amount = serializers.IntegerField(min_value=1)
-    kind = serializers.ChoiceField(choices=Donation.Kind.choices, default=Donation.Kind.SADAQAH)
+    kind = serializers.ChoiceField(choices=Donation.Kind.choices, default=Donation.Kind.DONATION)
     provider = serializers.ChoiceField(choices=["telebirr", "chapa", "mock"], required=False)
     payer_phone = serializers.CharField(required=False, allow_blank=True, max_length=16)
     is_anonymous = serializers.BooleanField(default=False)

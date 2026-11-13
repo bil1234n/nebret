@@ -149,7 +149,7 @@ class Command(BaseCommand):
             admin = User.objects.create_superuser("+251900000000", "admin12345", full_name="Nebret Admin")
         customer = User.objects.filter(phone="+251911223344").first()
         if not customer:
-            customer = User.objects.create_user("0911223344", "demo12345", full_name="Meron Tadesse",
+            customer = User.objects.create_user("0911223344", "112233", full_name="Meron Tadesse",
                                                 email="meron@example.com", city="Addis Ababa")
 
         cats = {}
@@ -163,7 +163,7 @@ class Command(BaseCommand):
                 name=name, defaults=dict(kind=kind, phone=phone, city=city, description=desc, is_verified=True,
                                          status=Agency.Status.ACTIVE, created_by=admin))
             if not AgencyStaff.objects.filter(agency=c, role=AgencyStaff.Role.OWNER).exists():
-                add_staff(c, full_name=owner, phone=owner_phone, password="company123", role=AgencyStaff.Role.OWNER)
+                add_staff(c, full_name=owner, phone=owner_phone, password="445566", role=AgencyStaff.Role.OWNER)
             companies.append(c)
 
         made = 0
@@ -213,7 +213,7 @@ class Command(BaseCommand):
             created_by=admin))
         ebike = Listing.objects.filter(title="Green Wheel Commuter e-bike").first()
         Giveaway.objects.get_or_create(title="Win a Green Wheel e-bike", defaults=dict(
-            description="Invite 10 friends who register with your code to earn a free entry. Paid by Nebret Equb.",
+            description="Invite 10 friends who register with your code to earn a free entry. Paid by Nebret.",
             prize_type=Giveaway.PrizeType.LISTING, prize_title="Green Wheel Commuter e-bike",
             prize_value=Decimal("68000"), prize_listing=ebike, number_of_winners=1, starts_at=now,
             ends_at=now + timedelta(days=30), draw_at=now + timedelta(days=31), is_featured=True,
@@ -222,5 +222,5 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"Demo data ready: {len(cats)} categories, {len(companies)} companies, {made} listings, {len(equbs)} Equbs.\n"
             "  Admin:    +251900000000 / admin12345  (console: /console/)\n"
-            "  Customer: 0911223344 / demo12345     (mobile app)\n"
-            "  Company:  0911000101 / company123    (company portal: /company/ – Sunshine Real Estate)"))
+            "  Customer: 0911223344 / PIN 112233    (mobile app)\n"
+            "  Company:  0911000101 / PIN 445566    (app + company portal: /company/ – Sunshine Real Estate)"))

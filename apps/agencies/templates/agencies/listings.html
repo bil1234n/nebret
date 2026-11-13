@@ -1,5 +1,5 @@
 {% extends "agencies/base.html" %}{% load console_tags %}
-{% block title %}Listings{% endblock %}{% block heading %}Listings &amp; stock{% endblock %}{% block crumbs %}Everything {{ agency.name }} sells on Nebret Equb{% endblock %}
+{% block title %}Listings{% endblock %}{% block heading %}Listings &amp; stock{% endblock %}{% block crumbs %}Everything {{ agency.name }} sells on Nebret{% endblock %}
 {% block actions %}{% if me.can_manage %}<a class="btn" href="{% url 'agency:listing_add' %}">+ New listing</a>{% endif %}{% endblock %}
 {% block content %}
 <form class="toolbar" method="get">

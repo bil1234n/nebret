@@ -2,7 +2,7 @@
 Signed handover pass.
 
 When an order is paid in full the customer gets a pass (shown as a QR code in the app). The seller scans or types it at
-handover; the signature proves the pass was issued by Nebret Equb for that exact order, so it can't be forged.
+handover; the signature proves the pass was issued by Nebret for that exact order, so it can't be forged.
 """
 from __future__ import annotations
 

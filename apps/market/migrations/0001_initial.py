@@ -299,7 +299,7 @@ class Migration(migrations.Migration):
                     "company",
                     models.ForeignKey(
                         blank=True,
-                        help_text="Partner company selling it (empty = Nebret Equb)",
+                        help_text="Partner company selling it (empty = Nebret)",
                         null=True,
                         on_delete=django.db.models.deletion.PROTECT,
                         related_name="listings",

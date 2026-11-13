@@ -7,7 +7,7 @@
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Sales this month</div><div class="value">{{ month.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ month.sales }} payment{{ month.sales|pluralize }} received</div></div>
   <div class="card kpi"><div class="label">Your share this month</div><div class="value">{{ month.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">after {{ month.commission|money }} platform fee</div></div>
-  <div class="card kpi gold"><div class="label">Owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid out by Nebret Equb</div></div>
+  <div class="card kpi gold"><div class="label">Owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid out by Nebret</div></div>
   <div class="card kpi"><div class="label">Live listings</div><div class="value">{{ counts.listings }}</div><div class="sub">{{ counts.units }} unit{{ counts.units|pluralize }} for sale</div></div>
 </div>
 <div class="grid g-4 mt">
@@ -17,7 +17,7 @@
   <a class="card kpi" href="{% url 'agency:customers' %}"><div class="label">Customers</div><div class="value">{{ counts.customers }}</div><div class="sub">signed up by your team</div></a>
 </div>
 
-{% if not agency.chapa_subaccount_id %}<div class="note-box mt">Your bank account is not linked to Chapa yet, so your share of each sale is collected by Nebret Equb and paid out to you. Once it is linked, Chapa sends your share straight to your bank at every payment. <a href="{% url 'agency:profile' %}">See your payout details →</a></div>{% endif %}
+{% if not agency.chapa_subaccount_id %}<div class="note-box mt">Your bank account is not linked to Chapa yet, so your share of each sale is collected by Nebret and paid out to you. Once it is linked, Chapa sends your share straight to your bank at every payment. <a href="{% url 'agency:profile' %}">See your payout details →</a></div>{% endif %}
 
 <div class="grid g-2 mt">
   <div class="card"><div class="card-h"><h2>Waiting for first payment</h2><a class="small" href="{% url 'agency:orders' %}?status=PENDING_PAYMENT">All →</a></div>

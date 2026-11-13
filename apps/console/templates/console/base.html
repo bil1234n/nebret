@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Console{% endblock %} · Nebret Equb</title>
+  <title>{% block title %}Console{% endblock %} · Nebret</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'console/console.css' %}">
@@ -12,7 +12,7 @@
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-mark">NE</div><div><b>Nebret Equb</b><small>Staff console</small></div></div>
+    <div class="brand"><div class="brand-mark">NE</div><div><b>Nebret</b><small>Staff console</small></div></div>
     <nav class="nav">
       <div class="nav-label">Overview</div>
       <a href="{% url 'console:dashboard' %}" class="{% if nav == 'dashboard' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
@@ -50,7 +50,7 @@
   <main class="main">
     <div class="topbar">
       <div>
-        <div class="crumbs">{% block crumbs %}Nebret Equb console{% endblock %}</div>
+        <div class="crumbs">{% block crumbs %}Nebret console{% endblock %}</div>
         <h1>{% block heading %}{% endblock %}</h1>
       </div>
       <div style="display:flex;gap:12px;align-items:center">

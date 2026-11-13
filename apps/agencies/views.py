@@ -1,9 +1,9 @@
 """
-Company portal (/company/): a partner company's own workspace on Nebret Equb.
+Company portal (/company/): a partner company's own workspace on Nebret.
 
 Company staff sign in with the same login page as the console and only ever see their own company's data: their
 listings and stock, orders and installments, handovers, customer inquiries, customers and their families, Equb places
-and their earnings after Nebret Equb's commission.
+and their earnings after Nebret's commission.
 """
 from __future__ import annotations
 
@@ -335,7 +335,7 @@ def customer_add(request):
         if res:
             cust, created = res
             messages.success(request, f"{cust.user.full_name} is now your customer"
-                             + ("." if created else " (they already had a Nebret Equb account)."))
+                             + ("." if created else " (they already had a Nebret account)."))
             if request.POST.get("_another"):
                 return redirect("agency:customer_add")
             return redirect("agency:customer", pk=cust.pk)
@@ -354,7 +354,7 @@ def customer_detail(request, pk):
             messages.success(request, "Family member removed.")
         elif a == "password":
             _do(request, lambda: services.set_customer_password(c, p.get("password", "")),
-                f"{c.user.first_name} can now sign in to the app with their phone and this password.")
+                f"{c.user.first_name} can now sign in to the app with their phone and this PIN.")
         elif a == "notes":
             c.notes = p.get("notes", "")[:2000]
             c.save(update_fields=["notes", "updated_at"])
@@ -420,6 +420,31 @@ def equb_enrol(request, slug):
         return redirect("agency:equb_enrol", slug=slug)
     return render(request, "agencies/equb_enrol.html", _ctx(
         request, "equb", g=g, customers=custs, pre=request.GET.get("customer", "")))
+
+
+@agency_required()
+def equb_place(request, pk):
+    """One customer's Equb place: what is owed and a form to record money the company collected."""
+    from apps.equb import services as equb_svc
+    from apps.equb import standing as standing_mod
+    from apps.equb.models import EqubPayment
+
+    m = get_object_or_404(EqubMembership.objects.select_related("group", "user"), pk=pk,
+                          user__agency_link__agency=request.agency)
+    if request.method == "POST":
+        p = request.POST
+        if _do(request, lambda: services.collect_equb_payment(
+                request.agency, m, request.user, method=p.get("method", ""),
+                rounds=int(p["rounds"]) if p.get("rounds") else None, amount=p.get("amount") or None,
+                reference=p.get("reference", ""), note=p.get("note", "")),
+               "Payment recorded – the member has been notified."):
+            return redirect("agency:equb_place", pk=pk)
+    plan = equb_svc.payment_plan(m)
+    return render(request, "agencies/equb_place.html", _ctx(
+        request, "equb", m=m, st=standing_mod.standing_for(m), plan=plan,
+        methods=[(k.value, k.label) for k in EqubPayment.OFFICE_METHODS],
+        payments=m.payments.filter(status=EqubPayment.Status.PAID).select_related("recorded_by").order_by("-created_at")[:30],
+        customer=AgencyCustomer.objects.filter(user=m.user, agency=request.agency).first()))
 
 
 # --------------------------------------------------------------------------- earnings, team, profile

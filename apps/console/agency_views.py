@@ -74,6 +74,15 @@ def agency_form(request, pk=None):
                    cancel=reverse("console:agency", args=[obj.pk]) if obj else reverse("console:agencies"))
 
 
+def _equb_cash(a):
+    """Equb contributions this company's staff collected from members (cash the company owes Nebret)."""
+    from apps.agencies.api import company_equb_cash
+
+    cash = company_equb_cash(a)
+    return {"total": cash["total"], "count": cash["count"],
+            "recent": cash["payments"].select_related("membership__group", "user", "recorded_by").order_by("-created_at")[:10]}
+
+
 @staff_required
 def agency_detail(request, pk):
     a = get_object_or_404(Agency, pk=pk)
@@ -115,4 +124,4 @@ def agency_detail(request, pk):
         "listings": a.listings.select_related("category").order_by("-created_at")[:15],
         "orders": a.orders.select_related("user", "listing").order_by("-created_at")[:15],
         "staff": a.staff.select_related("user"), "customers": a.customers.select_related("user")[:15],
-        "n_customers": a.customers.count(), "staff_form": StaffForm(), "statuses": Agency.Status.choices})
+        "n_customers": a.customers.count(), "equb_cash": _equb_cash(a), "staff_form": StaffForm(), "statuses": Agency.Status.choices})

@@ -1,0 +1,45 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}{{ m.display_name }} · {{ m.group.name }}{% endblock %}{% block heading %}{{ m.display_name }} – place #{{ m.position }}{% endblock %}
+{% block crumbs %}<a href="{% url 'agency:equbs' %}">Equb members</a> / {{ m.group.name }}{% endblock %}
+{% block actions %}{% if customer %}<a class="btn ghost" href="{% url 'agency:customer' customer.pk %}">Customer page</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="grid g-2">
+  <div class="card"><div class="card-h"><h2>This place</h2><span>{{ m.status|status_badge }}{% if m.has_won %} 🏆 won{% endif %}</span></div>
+    <div class="card-b"><dl class="kv">
+      <dt>Equb</dt><dd>{{ m.group.name }}</dd>
+      <dt>Contribution</dt><dd>{{ m.group.contribution_amount|money }} {{ m.group.frequency_days|every }}</dd>
+      <dt>Member</dt><dd>{{ m.display_name }}{% if m.dependent_name %} <span class="small muted">(paid by {{ m.user.full_name }})</span>{% endif %}</dd>
+      <dt>Phone</dt><dd class="mono">{{ m.user.phone }}</dd>
+      <dt>Standing</dt><dd>{{ st.status_label }}</dd>
+      <dt>Rounds paid</dt><dd>{{ st.paid_rounds }} of {{ st.total_rounds }}</dd>
+      <dt>Paid so far</dt><dd>{{ m.total_paid|money }}</dd>
+      <dt>Owes now</dt><dd class="{% if st.owes %}red{% endif %}">{{ st.owes|money }}</dd>
+      {% if st.next_due_date %}<dt>Next due</dt><dd>{{ st.next_due_date|date:"d M Y" }}</dd>{% endif %}
+    </dl></div>
+  </div>
+  <div class="card" id="pay"><div class="card-h"><h2>Record a payment</h2><span>Money you collected from the customer</span></div>
+    <div class="card-b">
+    {% if plan.options %}
+    <form method="post">{% csrf_token %}
+      <div class="field"><label for="rounds">Paying for</label>
+        <select id="rounds" name="rounds" required>
+          {% for o in plan.options %}<option value="{{ o.rounds }}">{{ o.rounds }} round{{ o.rounds|pluralize }} – {{ o.amount|money }}{% if o.includes_overdue %} (includes overdue){% endif %}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label for="method">How they paid</label>
+        <select id="method" name="method" required>{% for k, label in methods %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="reference">Transfer reference</label><input id="reference" name="reference" maxlength="64" placeholder="Needed for bank transfer and mobile money"></div>
+      <div class="field"><label for="note">Note</label><input id="note" name="note" maxlength="160"></div>
+      <button class="btn" type="submit">Record payment</button>
+      <p class="small muted" style="margin-top:12px">The payment settles the oldest unpaid round first. It is recorded under your name, and your company hands the collected money to Nebret.</p>
+    </form>
+    {% else %}<div class="empty">{{ plan.reason|default:"Nothing to pay right now – this place is paid up." }}</div>{% endif %}
+    </div>
+  </div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Payments</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Receipt</th><th>Date</th><th>Method</th><th>Recorded by</th><th class="r">Amount</th></tr></thead><tbody>
+  {% for p in payments %}<tr><td class="mono">{{ p.reference }}</td><td class="small">{{ p.paid_at|default:p.created_at|date:"d M Y, H:i" }}</td><td>{{ p.get_method_display }}</td>
+    <td>{{ p.recorded_by.full_name|default:"Paid in the app" }}</td><td class="r num">{{ p.amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">No payments yet.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

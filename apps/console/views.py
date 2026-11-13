@@ -1,5 +1,5 @@
 """
-Nebret Equb staff console — a server-rendered web dashboard for operations staff.
+Nebret staff console — a server-rendered web dashboard for operations staff.
 
 Every page is staff-only. Charts are rendered client-side with Chart.js from a
 single JSON config emitted per page (see ``static/console/console.js``).
@@ -57,7 +57,7 @@ def staff_required(view):
             if staff_for(request.user):
                 return redirect("agency:dashboard")
             logout(request)
-            messages.error(request, "The console is for Nebret Equb staff accounts only.")
+            messages.error(request, "The console is for Nebret staff accounts only.")
             return redirect("console:login")
         return view(request, *args, **kwargs)
     return wrapper
@@ -373,7 +373,16 @@ def user_edit(request, pk):
 
 @staff_required
 def user_detail(request, pk):
+    from apps.accounts.models import KycProfile
+    from apps.accounts.services import review_kyc
+
     u = get_object_or_404(User, pk=pk)
+    kyc = KycProfile.objects.filter(user=u).defer("photo", "id_photo").select_related("reviewed_by").first()
+    if request.method == "POST" and kyc and request.POST.get("action") in ("kyc_approve", "kyc_reject"):
+        approve = request.POST["action"] == "kyc_approve"
+        review_kyc(kyc, request.user, approve=approve, note=request.POST.get("note", ""))
+        messages.success(request, "Profile approved." if approve else "Profile rejected – the member was asked to send it again.")
+        return redirect("console:user", pk=pk)
     spent = dict(PaymentTransaction.objects.filter(user=u, status=PAID).values_list("purpose").annotate(s=Sum("amount")))
     charts = {"spend": {"type": "doughnut", "money": True, "labels": [PURPOSE_LABELS[k].split(" (")[0] for k in spent],
                         "datasets": [{"label": "Paid", "data": [float(v) for v in spent.values()]}]}}
@@ -387,7 +396,24 @@ def user_detail(request, pk):
         "payments": PaymentTransaction.objects.filter(user=u)[:15],
         "referrals": u.referrals.all()[:10],
         "blockers": deletion_blockers(u) if u.deletion_pending else None,
+        "kyc": kyc, "kyc_has_id_photo": bool(kyc) and KycProfile.objects.filter(pk=kyc.pk, id_photo__isnull=False).exists(),
     })
+
+
+@staff_required
+def kyc_photo(request, pk, which):
+    """A member's profile photo or ID picture (stored in the database), for staff only."""
+    from django.http import Http404, HttpResponse
+
+    from apps.accounts.models import KycProfile
+
+    profile = get_object_or_404(KycProfile, user_id=pk)
+    data = profile.photo if which == "photo" else profile.id_photo
+    if not data:
+        raise Http404
+    resp = HttpResponse(bytes(data), content_type="image/jpeg")
+    resp["Cache-Control"] = "private, max-age=300"
+    return resp
 
 
 # --------------------------------------------------------------------------- account deletion requests

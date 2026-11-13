@@ -1,11 +1,11 @@
 """
-Partner companies on Nebret Equb (the app label stays ``agencies``).
+Partner companies on Nebret (the app label stays ``agencies``).
 
 A company – a real-estate developer, a car dealer, an e-bike or electronics seller – publishes its own listings in the
 marketplace, takes orders for them (full payment, reservation, installments or Equb payouts), signs up its own
 customers (and their family members), enrols them in Equbs and hands the property over when it is paid.
 
-Every sale is split: the company keeps the sale, Nebret Equb keeps ``commission_percent`` (5 % by default). With a
+Every sale is split: the company keeps the sale, Nebret keeps ``commission_percent`` (5 % by default). With a
 Chapa subaccount, Chapa settles the company's share directly to the company's bank account at payment time; otherwise
 the share is recorded as owed and paid out from the console.
 """
@@ -48,7 +48,7 @@ class Agency(TimeStampedModel):
     description = models.TextField(blank=True, help_text="Shown to customers on the company page")
     logo_url = models.URLField(max_length=500, blank=True)
     website = models.URLField(blank=True)
-    is_verified = models.BooleanField(default=False, help_text="Licence and documents checked by Nebret Equb")
+    is_verified = models.BooleanField(default=False, help_text="Licence and documents checked by Nebret")
     license_number = models.CharField(max_length=60, blank=True, help_text="Trade licence number")
     tin = models.CharField("TIN", max_length=20, blank=True)
     phone = models.CharField(max_length=20)
@@ -59,7 +59,7 @@ class Agency(TimeStampedModel):
     commission_percent = models.DecimalField(
         max_digits=5, decimal_places=2, default=default_commission,
         validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("50"))],
-        help_text="Nebret Equb's commission on every sale, taken from the company's share.")
+        help_text="Nebret's commission on every sale, taken from the company's share.")
 
     # Payout account → Chapa subaccount (Chapa sends the company's share here automatically).
     bank_code = models.PositiveIntegerField(null=True, blank=True, help_text="Chapa bank id")
@@ -70,7 +70,7 @@ class Agency(TimeStampedModel):
                                            help_text="Set automatically when the Chapa subaccount is created")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                    related_name="+")
-    notes = models.TextField(blank=True, help_text="Internal notes (only Nebret Equb staff see these)")
+    notes = models.TextField(blank=True, help_text="Internal notes (only Nebret staff see these)")
 
     class Meta:
         ordering = ["name"]
@@ -183,11 +183,11 @@ class FamilyMember(TimeStampedModel):
 
 class AgencyLedgerEntry(TimeStampedModel):
     """
-    One company sale: what the customer paid, Nebret Equb's commission and the company's share.
+    One company sale: what the customer paid, Nebret's commission and the company's share.
 
     * ``GATEWAY`` – paid through a gateway or at the office. With a Chapa subaccount the company's share was settled
-      by Chapa; otherwise it is owed and paid out by Nebret Equb.
-    * ``CREDIT``  – an order paid with an Equb payout or a prize (money Nebret Equb already holds) – owed.
+      by Chapa; otherwise it is owed and paid out by Nebret.
+    * ``CREDIT``  – an order paid with an Equb payout or a prize (money Nebret already holds) – owed.
     """
 
     class Kind(models.TextChoices):

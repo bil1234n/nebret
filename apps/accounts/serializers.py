@@ -1,28 +1,45 @@
-from django.contrib.auth import password_validation
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers, status
 from rest_framework.exceptions import APIException
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import User, normalize_phone, validate_phone
+from .models import KycProfile, User, normalize_phone, validate_phone, validate_pin
 
 
 class UserSerializer(serializers.ModelSerializer):
     referrals_count = serializers.IntegerField(source="referrals.count", read_only=True)
+    company = serializers.SerializerMethodField()
+    kyc_status = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             "id", "phone", "email", "full_name", "preferred_language", "national_id",
             "date_of_birth", "city", "address", "referral_code",
-            "referrals_count", "is_phone_verified", "date_joined",
+            "referrals_count", "is_phone_verified", "date_joined", "company", "kyc_status",
         ]
+
+    def get_company(self, user) -> dict | None:
+        """Set for partner-company staff: the app opens the company workspace for them."""
+        from apps.agencies.services import staff_for
+
+        st = staff_for(user)
+        if not st:
+            return None
+        a = st.agency
+        return {"id": a.id, "name": a.name, "slug": a.slug, "kind": a.kind, "kind_label": a.get_kind_display(),
+                "role": st.role, "role_label": st.get_role_display(), "can_manage": st.can_manage,
+                "is_active": a.is_active, "logo_url": a.logo_url}
+
+    def get_kyc_status(self, user) -> str | None:
+        return KycProfile.objects.filter(user=user).values_list("status", flat=True).first()
         read_only_fields = ["phone", "referral_code", "is_phone_verified", "date_joined"]
 
 
 class RegisterSerializer(serializers.ModelSerializer):
     phone = serializers.CharField(max_length=20)  # normalised + validated in validate_phone
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True)
     referral_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
     tokens = serializers.SerializerMethodField()
 
@@ -38,8 +55,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_password(self, value):
-        password_validation.validate_password(value)
-        return value
+        try:
+            return validate_pin(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages)
 
     def validate_referral_code(self, value):
         if not value:
@@ -69,7 +88,7 @@ class AccountDeletionPending(APIException):
 
     status_code = status.HTTP_403_FORBIDDEN
     default_detail = ("This account is suspended because you asked us to delete it. Our team is reviewing the request. "
-                      "Contact Nebret Equb support if you want to keep your account.")
+                      "Contact Nebret support if you want to keep your account.")
     default_code = "deletion_pending"
 
 
@@ -96,3 +115,36 @@ class DeleteAccountSerializer(serializers.Serializer):
                                    error_messages={"min_length": "Please tell us why in a few words (at least 5 letters).",
                                                    "blank": "Please tell us why you want to delete your account.",
                                                    "required": "Please tell us why you want to delete your account."})
+
+
+class CheckPhoneSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=20)
+
+    def validate_phone(self, value):
+        value = normalize_phone(value)
+        validate_phone(value)
+        return value
+
+
+class ChangePinSerializer(serializers.Serializer):
+    current = serializers.CharField()
+    new = serializers.CharField()
+
+    def validate_new(self, value):
+        try:
+            return validate_pin(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages)
+
+
+class KycSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    has_id_photo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = KycProfile
+        fields = ["status", "status_label", "national_id", "monthly_income", "review_note", "submitted_at",
+                  "has_id_photo"]
+
+    def get_has_id_photo(self, obj) -> bool:
+        return bool(obj.id_photo)

@@ -1,6 +1,6 @@
 {% extends "console/base.html" %}{% load console_tags %}
 {% block title %}{{ l.title }}{% endblock %}{% block heading %}{{ l.title }}{% endblock %}
-{% block crumbs %}<a href="{% url 'console:listings' %}">Listings</a> / {{ l.category.name }} · {% if l.company %}<a href="{% url 'console:agency' l.company_id %}">{{ l.company.name }}</a>{% else %}Nebret Equb{% endif %}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:listings' %}">Listings</a> / {{ l.category.name }} · {% if l.company %}<a href="{% url 'console:agency' l.company_id %}">{{ l.company.name }}</a>{% else %}Nebret{% endif %}{% endblock %}
 {% block actions %}{{ l.status|status_badge:l.get_status_display }}
 <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="feature"><button class="btn ghost">{% if l.is_featured %}Unfeature{% else %}Feature{% endif %}</button></form>
 <form method="post" style="display:inline">{% csrf_token %}{% if l.status == 'DRAFT' or l.status == 'ARCHIVED' %}<input type="hidden" name="action" value="publish"><button class="btn ghost">Publish</button>{% else %}<input type="hidden" name="action" value="unpublish"><button class="btn ghost">Hide</button>{% endif %}</form>

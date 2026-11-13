@@ -43,9 +43,9 @@
 
 <div class="grid g-21 mt">
   <div class="card"><div class="card-h"><h2>Installment schedule</h2>{% if o.installment_months %}<span>{{ o.installment_months }} months · {{ o.first_payment|money }} down{% if o.finance_charge %} · {{ o.finance_charge|money }} finance charge{% endif %}</span>{% endif %}</div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Due</th><th class="r">Amount</th><th class="r">Late fee</th><th class="r">Paid</th><th>Status</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Due</th><th class="r">Amount</th><th class="r">Paid</th><th>Status</th><th></th></tr></thead><tbody>
     {% for i in installments %}<tr><td class="num">{{ i.number }}</td><td class="small">{{ i.due_date|date:"d M Y" }}</td><td class="r num">{{ i.amount|money }}</td>
-      <td class="r num">{% if i.late_fee %}{{ i.late_fee|money }}{% else %}—{% endif %}</td><td class="r num">{{ i.paid_amount|money }}</td><td>{{ i.status|status_badge:i.get_status_display }}</td>
+      <td class="r num">{{ i.paid_amount|money }}</td><td>{{ i.status|status_badge:i.get_status_display }}</td>
       <td class="r">{% if i.late_fee and i.status != 'PAID' %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="waive_fee"><input type="hidden" name="installment" value="{{ i.pk }}"><button class="btn ghost xs">Waive fee</button></form>{% endif %}</td></tr>
     {% empty %}<tr><td colspan="7" class="empty">{% if o.plan == 'INSTALLMENT' %}The schedule is created when the down payment is received.{% else %}No installments on this plan.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
   </div>
@@ -53,7 +53,7 @@
     <dl class="kv"><dt>Customer</dt><dd><a href="{% url 'console:user' o.user_id %}">{{ o.user.full_name }}</a><div class="small muted mono">{{ o.contact_phone }}</div></dd>
       <dt>Item</dt><dd><a href="{% url 'console:listing' o.listing_id %}">{{ o.listing.title }}</a><div class="small muted">{{ o.listing.category.name }}</div></dd>
       <dt>Unit</dt><dd class="mono">{{ o.unit.code }}{% if o.unit.label %} · {{ o.unit.label }}{% endif %}</dd>
-      <dt>Seller</dt><dd>{% if o.company %}<a href="{% url 'console:agency' o.company_id %}">{{ o.company.name }}</a>{% else %}Nebret Equb{% endif %}</dd>
+      <dt>Seller</dt><dd>{% if o.company %}<a href="{% url 'console:agency' o.company_id %}">{{ o.company.name }}</a>{% else %}Nebret{% endif %}</dd>
       <dt>Buyer on contract</dt><dd>{{ o.buyer_name|default:"—" }}{% if o.buyer_id_number %}<div class="small muted mono">ID {{ o.buyer_id_number }}</div>{% endif %}</dd>
       <dt>Price</dt><dd>{{ o.unit_price|money }}</dd>
       {% if o.delivery_fee %}<dt>Delivery</dt><dd>{{ o.delivery_fee|money }}</dd>{% endif %}

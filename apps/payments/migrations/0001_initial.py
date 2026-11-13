@@ -110,7 +110,7 @@ class Migration(migrations.Migration):
                     models.DecimalField(
                         decimal_places=2,
                         default=0,
-                        help_text="Nebret Equb's commission on a company sale",
+                        help_text="Nebret's commission on a company sale",
                         max_digits=12,
                     ),
                 ),

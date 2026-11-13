@@ -7,8 +7,8 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from apps.accounts.web import delete_account, privacy_policy
 from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView
 
-admin.site.site_header = "Nebret Equb Administration"
-admin.site.site_title = "Nebret Equb Admin"
+admin.site.site_header = "Nebret Administration"
+admin.site.site_title = "Nebret Admin"
 
 urlpatterns = [
     path("", LandingView.as_view(), name="landing"),
@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/app/version/", AppVersionView.as_view(), name="app-version"),
     path("api/auth/", include("apps.accounts.urls")),
     path("api/market/", include("apps.market.urls")),
+    path("api/company/", include("apps.agencies.api_urls")),
     path("api/equb/", include("apps.equb.urls")),
     path("api/community/", include("apps.luckydraw.urls")),
     path("api/payments/", include("apps.payments.urls")),

@@ -1,4 +1,4 @@
-/* Nebret Equb staff console — white surfaces, professional dark green */
+/* Nebret staff console — white surfaces, professional dark green */
 :root {
   --green: #0F382B; --green-2: #1B4D3E; --green-3: #3E8E6C; --green-soft: #E7F0EC; --green-tint: #F3F8F5;
   --gold: #C9A227; --gold-soft: #FBF5E1; --bg: #F6F9F7; --card: #FFFFFF; --line: #E1EAE5;
@@ -93,7 +93,8 @@ table.t { width: 100%; border-collapse: collapse; }
 /* toolbar, forms, buttons */
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
 .toolbar .grow { flex: 1; }
-input[type=text], input[type=search], input[type=email], input[type=password], input[type=date], select {
+input:not([type]), input[type=text], input[type=search], input[type=email], input[type=password], input[type=date], input[type=tel],
+input[type=number], input[type=url], input[type=time], input[type=datetime-local], select {
   height: 38px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; font: inherit; background: #fff; color: var(--text); min-width: 0;
 }
 input:focus, select:focus { outline: 2px solid var(--green-soft); border-color: var(--green-3); }
@@ -532,3 +533,7 @@ body.te-lock{overflow:hidden}
 .terms-doc .terms-sign{margin:30px 0 8px;max-width:300px}
 .terms-doc .terms-sign span{display:block;border-bottom:1.5px solid #3B4F46;height:34px}
 .terms-doc .terms-sign small{display:block;margin-top:6px;font-size:12.5px;color:#5B6B63;font-family:system-ui,sans-serif}
+
+/* content placed straight inside a form section (facts list, note, empty state) gets the section's padding */
+.form-section > dl.kv, .form-section > p, .form-section > .empty, .form-section > .table-wrap { padding: 18px 22px; margin: 0; }
+.form-section > .form-section-h + dl.kv { padding-top: 12px; }

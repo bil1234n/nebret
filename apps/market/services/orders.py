@@ -329,9 +329,9 @@ def cancellation_policy(order: Order) -> dict:
         out.update(can_cancel=True, code="unpaid", message="Nothing has been paid yet. Cancelling releases the item.")
     elif order.status == Order.Status.RESERVED:
         out.update(code="reserved", message="Reservation fees are non-refundable once the item is reserved. "
-                                            "Contact the seller or Nebret Equb to change your order.")
+                                            "Contact the seller or Nebret to change your order.")
     elif order.status in (Order.Status.INSTALLMENTS, Order.Status.PAID):
-        out.update(code="paid", message="This order is paid or being paid. Contact Nebret Equb to cancel – refunds "
+        out.update(code="paid", message="This order is paid or being paid. Contact Nebret to cancel – refunds "
                                         "follow the seller's terms.")
     else:
         out.update(code="closed", message="This order can no longer be changed.")
@@ -382,7 +382,7 @@ def expire_unpaid_orders() -> int:
 
 
 def sweep_installments() -> dict:
-    """Late fees on overdue installments, overdue notices, and reminders a few days before the due date."""
+    """Flag overdue installments (no penalty is charged), overdue notices, and reminders a few days before the due date."""
     today = timezone.localdate()
     grace = settings.NEBRET["INSTALLMENT_GRACE_DAYS"]
     fee_pct = Decimal(str(settings.NEBRET["INSTALLMENT_LATE_FEE_PERCENT"]))
@@ -391,10 +391,9 @@ def sweep_installments() -> dict:
                                                                                                     "order__listing")
     for inst in open_qs.filter(status=Installment.Status.PENDING, due_date__lt=today - timedelta(days=grace)):
         inst.status = Installment.Status.LATE
-        inst.late_fee = money(inst.amount * fee_pct / 100)
-        inst.save(update_fields=["status", "late_fee"])
+        inst.save(update_fields=["status"])  # no late penalty is charged
         log_event(inst.order, OrderEvent.Kind.INSTALLMENT,
-                  f"Installment #{inst.number} is late – {fmt(inst.late_fee)} ETB late fee added.")
+                  f"Installment #{inst.number} is late.")
         notify(inst.order.user, Notification.Kind.INSTALLMENT, "Installment overdue",
                f"Installment #{inst.number} for {inst.order.listing.title} ({fmt(inst.amount_due)} ETB) is overdue. "
                "Pay now to keep your order in good standing.", {"order": inst.order.reference})
@@ -413,7 +412,7 @@ def sweep_installments() -> dict:
                                                f"{fmt(order.balance_due)} ETB still unpaid – follow up.")
         Order.objects.filter(pk=order.pk).update(status=Order.Status.DEFAULTED)
         notify(order.user, Notification.Kind.ORDER, "Reservation ended",
-               f"Your reservation of {order.listing.title} ended before the balance was paid. Contact Nebret Equb.",
+               f"Your reservation of {order.listing.title} ended before the balance was paid. Contact Nebret.",
                {"order": order.reference})
         lapsed += 1
     return {"late": late, "reminded": reminded, "reservations_lapsed": lapsed}
@@ -433,5 +432,5 @@ def complete_handover(order: Order, *, staff, note: str = "") -> Order:
     log_event(order, OrderEvent.Kind.HANDED_OVER, note or "Handed over to the customer.", by=staff)
     transaction.on_commit(lambda: notify(
         order.user, Notification.Kind.ORDER, "Handed over – congratulations! 🔑",
-        f"{order.listing.title} is now yours. Thank you for buying with Nebret Equb.", {"order": order.reference}))
+        f"{order.listing.title} is now yours. Thank you for buying with Nebret.", {"order": order.reference}))
     return order

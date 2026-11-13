@@ -723,7 +723,7 @@ class Migration(migrations.Migration):
                         choices=[
                             (
                                 "FULL_POT",
-                                "Full pot – Nebret Equb guarantees the payout",
+                                "Full pot – Nebret guarantees the payout",
                             ),
                             ("COLLECTED", "Only what was collected by draw day"),
                         ],

@@ -443,7 +443,7 @@ def equb_collections(request):
     members, standings = reports.live_standings(group_id=int(pool) if pool.isdigit() else None, search=q)
     rows = reports.debtors(members, standings, band=band, only_never_paid=never)
     if request.GET.get("export") == "csv":
-        return _csv(f"nebret-equb-arrears-{timezone.localdate()}.csv",
+        return _csv(f"nebret-arrears-{timezone.localdate()}.csv",
                     ["Member", "Phone", "Equb", "Place", "Standing", "Missed rounds", "Days overdue", "Arrears (ETB)",
                      "Paid (ETB)", "Credit (ETB)", "Won", "Last called"],
                     [[r["m"].user.full_name, r["m"].user.phone, r["m"].group.name, r["m"].position, r["s"].status_label,
@@ -700,7 +700,7 @@ def equb_draws(request):
                     rows.append([timezone.localtime(d.executed_at).strftime("%Y-%m-%d %H:%M"), d.round.group.name,
                                  d.round.number, p.membership.user.full_name, p.membership.user.phone, p.amount,
                                  p.get_status_display(), d.get_mode_display(), len(d.eligible_memberships), p.voucher_code])
-            return _csv(f"nebret-equb-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
+            return _csv(f"nebret-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
                                                           "Payout", "Mode", "Entries", "Voucher"], rows)
         ctx.update(page=_pager(request, qs), mode=mode)
     elif tab == "payouts":
@@ -800,7 +800,7 @@ def equb_rules(request):
     return _render(request, nav="settings", title="Equb rules", crumbs="Settings", form=form,
                    cancel=reverse("console:settings"), obj=obj,
                    intro="These rules apply to every Equb group: when members count as behind, when they leave the draw, "
-                         "reminders and the call-centre thresholds. Each group's own contribution, late fee and grace days "
+                         "reminders and the call-centre thresholds. Each group's own contribution and grace days "
                          "are set on the group.")
 
 
@@ -997,7 +997,7 @@ def equb_memberships(request):
     if request.GET.get("export") == "csv":
         items = list(qs)
         stand = st.standings_for(items)
-        return _csv(f"nebret-equb-memberships-{timezone.localdate()}.csv",
+        return _csv(f"nebret-memberships-{timezone.localdate()}.csv",
                     ["Package", "Group", "Position", "Member", "Phone", "Contribution (ETB)", "Status", "Standing",
                      "Paid (ETB)", "Arrears (ETB)", "Won round", "Joined"],
                     ([m.group.equb_package.name if m.group.equb_package_id else "", m.group.name, m.position,

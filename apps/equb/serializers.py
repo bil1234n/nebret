@@ -121,20 +121,16 @@ def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
                "rounds only collect payments."]
     else:
         out = [f"Pay {money(g.contribution_amount)} ETB {g.every} for {total} rounds – one draw each round."]
-    if Decimal(g.late_fee):
-        out.append(f"You have {g.grace_days} days' grace after each due date; after that a late fee of "
-                   f"{money(g.late_fee)} ETB is added.")
-    else:
-        out.append(f"You have {g.grace_days} days' grace after each due date.")
+    out.append(f"You have {g.grace_days} days' grace after each due date. No late penalty is charged.")
     if g.require_paid_to_draw:
         out.append("Only members who have paid the round (and nothing older) enter its draw.")
     out.append(f"{rules.block_at} unpaid rounds keep you out of draws until you catch up; "
                f"{rules.suspend_at} unpaid rounds can lead to your place being cancelled.")
     if g.draw_type == EqubGroup.DrawType.MANUAL:
-        out.append("Nebret Equb runs each round's draw on the draw date and announces the winner in the app.")
+        out.append("Nebret runs each round's draw on the draw date and announces the winner in the app.")
     else:
         out.append("A provably-fair random draw runs automatically on each draw date – you can verify it in the app.")
-    basis = ("guaranteed by Nebret Equb" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
+    basis = ("guaranteed by Nebret" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
              else "from what was collected by draw day")
     if g.payment_rounds:
         out.append(f"Each winner receives the price per person – {money(g.price_per_person)} ETB – "
@@ -145,7 +141,7 @@ def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
     out.append("Winners can use their payout to buy a car, home, plot or e-bike in the Nebret marketplace, or take it "
                "in cash.")
     out.append(f"You can pay up to {rules.max_advance_rounds} rounds ahead; early payments are used automatically.")
-    out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from Nebret Equb.")
+    out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from Nebret.")
     out += [line.strip() for line in (g.rules_text or "").splitlines() if line.strip()]
     return out
 
@@ -218,7 +214,7 @@ class EqubGroupDetailSerializer(EqubGroupListSerializer):
         return standing_mod.standing_for(m).as_dict() if m else None
 
     def get_rules_summary(self, obj) -> list[str]:
-        return rules_summary(obj, self.context.get("rules") or EqubSettings.load())
+        return []  # replaced by the group's Terms Content – see terms_document
 
     def get_terms_content(self, obj) -> list[str]:
         return terms_lines(obj)

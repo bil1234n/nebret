@@ -23,6 +23,7 @@ urlpatterns = [
     path("customers/<int:pk>/family/<int:member>/", views.family_form, name="family_edit"),
     path("equb/", views.equbs, name="equbs"),
     path("equb/<slug:slug>/enrol/", views.equb_enrol, name="equb_enrol"),
+    path("equb/place/<int:pk>/", views.equb_place, name="equb_place"),
     path("earnings/", views.earnings, name="earnings"),
     path("team/", views.team, name="team"),
     path("profile/", views.profile, name="profile"),

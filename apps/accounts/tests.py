@@ -67,7 +67,7 @@ class AccountDeletionTests(TestCase):
         self.assertFalse(self.user.has_usable_password())
         self.assertEqual(self.login().status_code, 401)
         # the number can register again
-        res = self.api.post("/api/auth/register/", {"phone": PHONE, "full_name": "New Person", "password": "another-pass-9"},
+        res = self.api.post("/api/auth/register/", {"phone": PHONE, "full_name": "New Person", "password": "482913"},
                             format="json")
         self.assertEqual(res.status_code, 201)
 

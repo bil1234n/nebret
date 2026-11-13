@@ -141,6 +141,20 @@ def create_agency(*, name: str, phone: str, owner_name: str, owner_phone: str, o
     return agency
 
 
+def set_pin(user, pin: str):
+    """The app (and the company portal) sign in with phone + 6-digit PIN."""
+    from django.core.exceptions import ValidationError
+
+    from apps.accounts.models import validate_pin
+
+    try:
+        pin = validate_pin(pin)
+    except ValidationError as exc:
+        raise BusinessRuleError(" ".join(exc.messages)) from exc
+    user.set_password(pin)
+    user.save(update_fields=["password"])
+
+
 def _user_for(phone: str, full_name: str, email: str = "") -> tuple[User, bool]:
     phone = normalize_phone(phone)
     try:
@@ -161,17 +175,14 @@ def add_staff(agency: Agency, *, full_name: str, phone: str, password: str = "",
               email: str = "") -> AgencyStaff:
     user, created = _user_for(phone, full_name, email)
     if user.is_staff:
-        raise BusinessRuleError("This phone belongs to a Nebret Equb staff account.")
+        raise BusinessRuleError("This phone belongs to a Nebret staff account.")
     existing = AgencyStaff.objects.filter(user=user).select_related("agency").first()
     if existing and existing.agency_id != agency.id:
         raise BusinessRuleError(f"{user.full_name} already works for {existing.agency.name}.")
     if AgencyCustomer.objects.filter(user=user).exclude(agency=agency).exists():
         raise BusinessRuleError(f"{user.full_name} is a customer of another company.")
     if password:
-        if len(password) < 6:
-            raise BusinessRuleError("The password needs at least 6 characters.")
-        user.set_password(password)
-        user.save(update_fields=["password"])
+        set_pin(user, password)
     if existing:
         existing.role, existing.is_active = role, True
         existing.save(update_fields=["role", "is_active", "updated_at"])
@@ -185,7 +196,7 @@ def add_customer(agency: Agency, *, full_name: str, phone: str, email: str = "",
                  notes: str = "", added_by=None) -> tuple[AgencyCustomer, bool]:
     """Register a new customer (or link an existing app user who isn't with another agency)."""
     if not agency.is_active:
-        raise BusinessRuleError("Your company is not active yet. Contact Nebret Equb.")
+        raise BusinessRuleError("Your company is not active yet. Contact Nebret.")
     user, created = _user_for(phone, full_name, email)
     if user.is_staff or AgencyStaff.objects.filter(user=user).exists():
         raise BusinessRuleError("This phone number belongs to a staff account.")
@@ -195,22 +206,16 @@ def add_customer(agency: Agency, *, full_name: str, phone: str, email: str = "",
             raise BusinessRuleError(f"{user.full_name} is already one of your customers.")
         raise BusinessRuleError(f"{user.full_name} is already registered with another company.")
     if password:
-        if len(password) < 6:
-            raise BusinessRuleError("The password needs at least 6 characters.")
         if not created and user.has_usable_password():
-            raise BusinessRuleError("This customer already has an app password; they can sign in with it.")
-        user.set_password(password)
-        user.save(update_fields=["password"])
+            raise BusinessRuleError("This customer already has an app PIN; they can sign in with it.")
+        set_pin(user, password)
     return AgencyCustomer.objects.create(agency=agency, user=user, added_by=added_by, notes=notes), created
 
 
 def set_customer_password(customer: AgencyCustomer, password: str):
     if customer.user.has_usable_password():
-        raise BusinessRuleError("This customer already set their own password.")
-    if len(password or "") < 6:
-        raise BusinessRuleError("The password needs at least 6 characters.")
-    customer.user.set_password(password)
-    customer.user.save(update_fields=["password"])
+        raise BusinessRuleError("This customer already set their own PIN.")
+    set_pin(customer.user, password)
 
 
 def search_customers(agency: Agency, q: str = ""):
@@ -282,3 +287,22 @@ def chapa_banks() -> list[dict]:
     except GatewayError as exc:
         log.warning("Chapa bank list unavailable: %s", exc)
         return []
+
+
+# --------------------------------------------------------------------------- Equb money collected by the company
+def collect_equb_payment(agency: Agency, membership, staff, *, method: str, rounds: int | None = None, amount=None,
+                         reference: str = "", note: str = ""):
+    """
+    A customer pays their Equb contribution at the company (cash, bank transfer, mobile money). It settles the place
+    exactly like an app payment and is recorded against the staff member, so Nebret knows what the company collected.
+    """
+    from apps.equb.services import record_office_payment
+
+    if not agency.is_active:
+        raise BusinessRuleError("Your company is not active.")
+    link = AgencyCustomer.objects.filter(user=membership.user, agency=agency).exists()
+    if not link:
+        raise BusinessRuleError("This Equb place does not belong to one of your customers.")
+    label = f"Collected by {agency.name}"
+    return record_office_payment(membership, staff, method=method, rounds=rounds, amount=amount, reference=reference,
+                                 note=f"{label}. {note}".strip()[:255] if note else label)

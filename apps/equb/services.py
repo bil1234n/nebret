@@ -242,6 +242,7 @@ def sync_running_group(group: EqubGroup) -> EqubGroup:
     drawn = group.rounds.exclude(status=EqubRound.Status.UPCOMING).aggregate(m=Max("number"))["m"] or 0
     wanted = max(round_count(group, members), group.current_round or 1, drawn)
     _schedule_rounds(group, wanted, members)
+    _bill_missed_rounds(group)
     rnd = group.rounds.filter(status=EqubRound.Status.COLLECTING).first()
     if rnd:
         live = list(_active_members(group).exclude(contributions__round=rnd))
@@ -257,6 +258,25 @@ def sync_running_group(group: EqubGroup) -> EqubGroup:
     elif not group.rounds.exclude(status=EqubRound.Status.UPCOMING).exists() and group.rounds.exists():
         open_round(group.rounds.order_by("number").first())
     return group
+
+
+def _bill_missed_rounds(group: EqubGroup) -> int:
+    """
+    Everyone in an Equb pays every round. Someone who joins after rounds were already collected (and drawn) still
+    owes those rounds: they get a slip for each one and pay them first, oldest first.
+    """
+    past = list(group.rounds.filter(status=EqubRound.Status.DRAWN, extra_draw=False).order_by("number"))
+    if not past:
+        return 0
+    have = set(Contribution.objects.filter(round__in=past).values_list("round_id", "membership_id"))
+    new = [Contribution(round=r, membership=m, amount=group.contribution_amount)
+           for m in _active_members(group).filter(has_won=False) for r in past if (r.id, m.id) not in have]
+    Contribution.objects.bulk_create(new, ignore_conflicts=True)
+    for r in past:
+        if any(c.round_id == r.id for c in new):
+            r.expected_amount = sum(r.contributions.values_list("amount", flat=True), Decimal("0"))
+            r.save(update_fields=["expected_amount", "updated_at"])
+    return len(new)
 
 
 def _active_members(group):
@@ -597,6 +617,22 @@ def chance_factors(m: EqubMembership, slip, st, rnd: EqubRound, rules: EqubSetti
     return weight, f
 
 
+KYC_REASON = "Profile form not filled in (photo, national ID and monthly income)"
+
+
+def kyc_info(m: EqubMembership, paid_rounds: int) -> dict:
+    """What the app needs to show the profile-form popup for this place."""
+    from apps.accounts.models import KycProfile
+
+    g = m.group
+    profile = KycProfile.objects.filter(user_id=m.user_id).only("status", "review_note").first()
+    done = bool(profile and profile.is_valid)
+    due = bool(g.require_kyc and not done and paid_rounds >= g.kyc_after_payments)
+    return {"required": g.require_kyc, "after_payments": g.kyc_after_payments, "status": profile.status if profile else None,
+            "done": done, "due": due, "payments_left": max(g.kyc_after_payments - paid_rounds, 0) if g.require_kyc else 0,
+            "review_note": profile.review_note if profile else ""}
+
+
 def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | None = None) -> dict:
     """
     Who is in this round's draw and who is not – with the reason for every exclusion.
@@ -614,6 +650,12 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
     ).values("membership_id").annotate(n=Count("id"), s=Sum("amount"))}
     ahead = set(Contribution.objects.filter(round__group=group, round__number__gt=rnd.number,
                                             status=Contribution.Status.PAID).values_list("membership_id", flat=True))
+    kyc_ok = None
+    if group.require_kyc:
+        from apps.accounts.models import KycProfile
+
+        kyc_ok = set(KycProfile.objects.filter(user_id__in=[m.user_id for m in members])
+                     .exclude(status=KycProfile.Status.REJECTED).values_list("user_id", flat=True))
     entries = []
     for m in members:
         st = standings[m.id]
@@ -639,6 +681,8 @@ def draw_pool(rnd: EqubRound, rules: EqubSettings | None = None, today: date | N
             if st.paid_rounds < rules.min_paid_rounds_to_win and not unpaid_round:
                 reasons.append(f"Needs at least {rules.min_paid_rounds_to_win} paid round"
                                f"{'s' if rules.min_paid_rounds_to_win > 1 else ''}")
+            if kyc_ok is not None and m.user_id not in kyc_ok and st.paid_rounds >= group.kyc_after_payments:
+                reasons.append(KYC_REASON)
         weight, factors = chance_factors(m, slips.get(m.id), st, rnd, rules, ahead,
                                          earlier.get(m.id, {}).get("n", 0))
         entries.append({"membership_id": m.id, "position": m.position, "name": m.display_name, "team_id": m.team_id,

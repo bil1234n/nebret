@@ -23,6 +23,22 @@
   <div class="card"><div class="card-h"><h2>Spending mix</h2></div><div class="chart-box sm"><canvas data-chart="spend"></canvas></div></div>
 </div>
 <div class="grid g-3 mt">
+  <div class="card"><div class="card-h"><h2>Member profile (photo, ID, income)</h2>{% if kyc %}<span>{{ kyc.status|status_badge:kyc.get_status_display }}</span>{% endif %}</div>
+    {% if kyc %}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      <a href="{% url 'console:kyc_photo' u.pk 'photo' %}" target="_blank"><img src="{% url 'console:kyc_photo' u.pk 'photo' %}" alt="Member photo" style="width:120px;height:120px;object-fit:cover;border-radius:14px;border:1px solid var(--line)"></a>
+      {% if kyc_has_id_photo %}<a href="{% url 'console:kyc_photo' u.pk 'id' %}" target="_blank"><img src="{% url 'console:kyc_photo' u.pk 'id' %}" alt="ID card" style="width:190px;height:120px;object-fit:cover;border-radius:14px;border:1px solid var(--line)"></a>{% endif %}
+      <dl class="kv" style="flex:1;min-width:220px"><dt>National ID</dt><dd class="mono">{{ kyc.national_id }}</dd>
+        <dt>Monthly income</dt><dd>{{ kyc.monthly_income|money }}</dd>
+        <dt>Sent</dt><dd>{{ kyc.submitted_at|date:"d M Y, H:i" }}</dd>
+        {% if kyc.reviewed_by %}<dt>Reviewed by</dt><dd>{{ kyc.reviewed_by.full_name }}{% if kyc.review_note %} – {{ kyc.review_note }}{% endif %}</dd>{% endif %}</dl>
+    </div>
+    <form method="post" style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">{% csrf_token %}
+      <input name="note" maxlength="200" placeholder="Reason (shown to the member when rejected)" style="flex:1;min-width:220px">
+      <button class="btn sm" name="action" value="kyc_approve">Approve</button>
+      <button class="btn ghost sm" name="action" value="kyc_reject">Reject – ask again</button></form>
+    {% else %}<div class="empty">Not sent yet. Equb members are asked for it in the app before they can win a draw.</div>{% endif %}
+  </div>
   <div class="card"><div class="card-h"><h2>Equb memberships</h2></div>
     {% for m in memberships %}<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div style="display:flex;justify-content:space-between;gap:8px"><a class="strong" href="{% url 'console:equb_member' m.pk %}">{{ m.group.name }}</a>{{ m.standing.status|standing_badge }}</div><div class="small muted">#{{ m.position }} · paid {{ m.total_paid|money }}{% if m.standing.arrears %} · <span style="color:var(--red)">owes {{ m.standing.arrears|money }}</span>{% endif %}{% if m.has_won %} · 🏆 won{% endif %}</div></div>
     {% empty %}<div class="empty">Not in any Equb.</div>{% endfor %}</div>

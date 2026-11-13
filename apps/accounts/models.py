@@ -121,3 +121,57 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def deletion_pending(self) -> bool:
         return self.deletion_status == self.DeletionStatus.PENDING
+
+
+PIN_LENGTH = 6
+
+
+def validate_pin(value: str) -> str:
+    """App sign-in uses a numeric PIN (like telebirr), typed on the app's own keypad."""
+    from django.core.exceptions import ValidationError
+
+    value = (value or "").strip()
+    if not (value.isdigit() and len(value) == PIN_LENGTH):
+        raise ValidationError(f"The PIN must be exactly {PIN_LENGTH} digits.")
+    if len(set(value)) == 1 or value in ("123456", "654321", "012345"):
+        raise ValidationError("That PIN is too easy to guess. Choose another one.")
+    return value
+
+
+class KycProfile(models.Model):
+    """
+    Know-your-member details an Equb member gives before they can win a draw: their photo, national ID and
+    monthly income. Pictures are kept in the database (small JPEGs) so they survive on read-only hosts.
+    """
+
+    class Status(models.TextChoices):
+        SUBMITTED = "SUBMITTED", "Submitted"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected – send again"
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="kyc")
+    photo = models.BinaryField(editable=False)
+    id_photo = models.BinaryField(null=True, blank=True, editable=False)
+    national_id = models.CharField("National ID number", max_length=32)
+    monthly_income = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.SUBMITTED, db_index=True)
+    review_note = models.CharField(max_length=255, blank=True)
+    reviewed_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "member profile (KYC)"
+        verbose_name_plural = "member profiles (KYC)"
+
+    def __str__(self):
+        return f"{self.user} – {self.get_status_display()}"
+
+    @property
+    def is_valid(self) -> bool:
+        return self.status != self.Status.REJECTED
+
+
+def kyc_done(user) -> bool:
+    profile = KycProfile.objects.filter(user=user).only("status").first()
+    return bool(profile and profile.is_valid)

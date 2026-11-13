@@ -81,7 +81,7 @@ class Migration(migrations.Migration):
                     "message",
                     models.TextField(
                         blank=True,
-                        default="Update Nebret Equb to get the latest features and fixes.",
+                        default="Update Nebret to get the latest features and fixes.",
                     ),
                 ),
                 ("is_active", models.BooleanField(default=True)),

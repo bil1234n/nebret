@@ -46,8 +46,8 @@
 
 <div class="grid g-21 mt">
   <div class="card"><div class="card-h"><h2>Installment schedule</h2>{% if o.installment_months %}<span>{{ o.installment_months }} months · {{ o.first_payment|money }} down</span>{% endif %}</div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Due</th><th class="r">Amount</th><th class="r">Late fee</th><th class="r">Paid</th><th>Status</th></tr></thead><tbody>
-    {% for i in installments %}<tr><td class="num">{{ i.number }}</td><td class="small">{{ i.due_date|date:"d M Y" }}</td><td class="r num">{{ i.amount|money }}</td><td class="r num">{% if i.late_fee %}{{ i.late_fee|money }}{% else %}—{% endif %}</td>
+    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Due</th><th class="r">Amount</th><th class="r">Paid</th><th>Status</th></tr></thead><tbody>
+    {% for i in installments %}<tr><td class="num">{{ i.number }}</td><td class="small">{{ i.due_date|date:"d M Y" }}</td><td class="r num">{{ i.amount|money }}</td>
       <td class="r num">{{ i.paid_amount|money }}</td><td>{{ i.status|status_badge:i.get_status_display }}</td></tr>
     {% empty %}<tr><td colspan="6" class="empty">{% if o.plan == 'INSTALLMENT' %}The schedule is created when the down payment is received.{% else %}No installments on this plan.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
   </div>

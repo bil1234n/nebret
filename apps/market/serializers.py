@@ -231,7 +231,7 @@ class OrderListSerializer(serializers.ModelSerializer):
         return (obj.unit.label or obj.unit.code) if obj.unit_id else ""
 
     def get_seller_name(self, obj) -> str:
-        return obj.company.name if obj.company_id else "Nebret Equb"
+        return obj.company.name if obj.company_id else "Nebret"
 
     def get_next_installment(self, obj) -> dict | None:
         if obj.status != Order.Status.INSTALLMENTS:

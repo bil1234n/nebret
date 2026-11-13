@@ -136,7 +136,7 @@ class MockCheckoutView(APIView):
     def get(self, request, reference):
         txn = self._txn(reference)
         html = f"""<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1">
-<title>Nebret Equb Sandbox Pay</title><style>body{{font-family:system-ui;background:#fff;color:#0F382B;padding:24px}}
+<title>Nebret Sandbox Pay</title><style>body{{font-family:system-ui;background:#fff;color:#0F382B;padding:24px}}
 .card{{border:1px solid #d9e5df;border-radius:16px;padding:24px;max-width:420px;margin:auto}}
 button{{width:100%;padding:14px;border:0;border-radius:12px;font-size:16px;margin-top:12px;cursor:pointer}}
 .pay{{background:#0F382B;color:#fff}}.fail{{background:#f3f5f4;color:#0F382B}}</style></head>

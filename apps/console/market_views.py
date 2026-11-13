@@ -84,7 +84,7 @@ def orders(request):
     if request.GET.get("export") == "csv":
         rows = ([o.reference, timezone.localtime(o.created_at).strftime("%Y-%m-%d %H:%M"), o.get_status_display(),
                  o.get_plan_display(), o.listing.title, o.unit.code if o.unit_id else "", o.listing.category.name,
-                 o.company.name if o.company_id else "Nebret Equb", o.user.full_name, o.user.phone, o.buyer_name,
+                 o.company.name if o.company_id else "Nebret", o.user.full_name, o.user.phone, o.buyer_name,
                  o.buyer_id_number, o.get_funding_source_display(), f"{o.total_amount:.2f}", f"{o.amount_paid:.2f}",
                  f"{o.balance_due:.2f}", f"{o.refunded_amount:.2f}"] for o in qs.iterator(chunk_size=500))
         return _csv(f"nebret-orders-{timezone.localdate()}.csv",
@@ -117,7 +117,7 @@ def order_detail(request, reference):
             _do(request, lambda: order_svc.complete_handover(o, staff=request.user, note=p.get("note", "")),
                 "Handover recorded – the customer has been notified.")
         elif a == "cancel":
-            _do(request, lambda: order_svc.cancel_order(o, p.get("reason") or "Cancelled by Nebret Equb",
+            _do(request, lambda: order_svc.cancel_order(o, p.get("reason") or "Cancelled by Nebret",
                                                         staff=request.user), "Order cancelled – the unit is back on sale.")
         elif a == "refund":
             _do(request, lambda: ops.refund_order(o, request.user, amount=p.get("amount") or 0,
@@ -248,7 +248,7 @@ def listing_form(request, pk=None):
     form = ListingForm(request.POST or None, instance=obj)
     form.fields["company"] = dj_forms.ModelChoiceField(
         queryset=Agency.objects.order_by("name"), required=False, initial=obj.company_id if obj else None,
-        empty_label="Nebret Equb (sold directly)", label="Seller")
+        empty_label="Nebret (sold directly)", label="Seller")
     form.sections = [("Seller", "", ["company"])] + form.sections
     if request.method == "POST" and form.is_valid():
         listing = form.save(commit=False)
@@ -335,7 +335,7 @@ def inquiries(request):
             inq.reply, inq.status = reply[:2000], Inquiry.Status.ANSWERED
             inq.replied_by, inq.replied_at = request.user, timezone.now()
             inq.save()
-            notify(inq.user, Notification.Kind.ORDER, "Nebret Equb replied",
+            notify(inq.user, Notification.Kind.ORDER, "Nebret replied",
                    f"About {inq.listing.title}: {reply[:300]}", {"listing": inq.listing.slug})
             messages.success(request, "Reply sent to the customer.")
         elif request.POST.get("action") == "close":

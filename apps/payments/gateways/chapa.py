@@ -73,7 +73,7 @@ class ChapaGateway(PaymentGateway):
     # ------------------------------------------------------------------ checkout
     def initiate(self, txn, *, return_url, notify_url):
         user = txn.user
-        first, _, last = (user.full_name or "Nebret Equb Customer").strip().partition(" ")
+        first, _, last = (user.full_name or "Nebret Customer").strip().partition(" ")
         body = {
             "amount": f"{txn.amount:.2f}",
             "currency": txn.currency,
@@ -83,7 +83,7 @@ class ChapaGateway(PaymentGateway):
             "callback_url": notify_url,
             "return_url": return_url,
             "customization": {
-                "title": (self.config.get("CHECKOUT_TITLE") or "Nebret Equb")[:16],
+                "title": (self.config.get("CHECKOUT_TITLE") or "Nebret")[:16],
                 "description": _clean_description(txn.get_purpose_display()),
             },
             "meta": {"purpose": txn.purpose},

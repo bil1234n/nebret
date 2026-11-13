@@ -142,10 +142,7 @@ class OrderFlowTests(TestCase):
         self.assertEqual(out["late"], 1)
         first.refresh_from_db()
         self.assertEqual(first.status, Installment.Status.LATE)
-        self.assertEqual(first.late_fee, Decimal("14000.00"))  # 2% of 700,000
-        operations.waive_installment_fee(first, make_user("Staff", staff=True), "bank outage")
-        first.refresh_from_db()
-        self.assertEqual(first.late_fee, 0)
+        self.assertEqual(first.late_fee, 0)  # no late penalty is ever charged
 
     def test_unpaid_order_expires_and_unit_returns(self):
         o = self.order(plan="FULL")
@@ -216,7 +213,7 @@ class CompanyTests(TestCase):
     def setUp(self):
         self.company = make_company()
         self.listing = make_listing(company=self.company, units=2)
-        self.owner = add_staff(self.company, full_name="Abel Owner", phone="0911000999", password="company123",
+        self.owner = add_staff(self.company, full_name="Abel Owner", phone="0911000999", password="445566",
                                role="OWNER").user
 
     def test_company_sale_records_commission(self):

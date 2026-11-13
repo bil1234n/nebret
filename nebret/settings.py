@@ -1,7 +1,7 @@
 """
-Nebret Equb — Django settings.
+Nebret — Django settings.
 
-Nebret Equb is a property Equb and marketplace: members save together in Equb circles and buy cars, houses,
+Nebret is a property Equb and marketplace: members save together in Equb circles and buy cars, houses,
 apartments, land, e-bikes and electronics from verified partner companies.
 
 All secrets and environment-specific values are read from environment variables
@@ -130,7 +130,7 @@ else:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": env("DB_NAME", "nebret_equb"),
+            "NAME": env("DB_NAME", "nebret"),
             "USER": env("DB_USER", "postgres"),
             "PASSWORD": env("DB_PASSWORD", "Bilal1234"),
             "HOST": env("DB_HOST", "localhost"),
@@ -143,8 +143,8 @@ else:
 AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [
+    # The app signs in with a 6-digit PIN (apps.accounts.models.validate_pin); staff passwords need 6+ characters.
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 6}},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
 ]
 
 LANGUAGE_CODE = "en-us"
@@ -205,7 +205,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Nebret Equb API",
+    "TITLE": "Nebret API",
     "DESCRIPTION": "Property marketplace (cars, houses, apartments, land, e-bikes & electronics), property Equb "
                    "circles, installment plans, Sadaqah crowdfunding and free referral giveaways.",
     "VERSION": "1.0.0",
@@ -224,13 +224,13 @@ NEBRET = {
     # How long a unit is held for a customer while they pay (full payment or deposit).
     "RESERVATION_HOLD_MINUTES": int(env("RESERVATION_HOLD_MINUTES", 30)),
     "ORDER_PAYMENT_WINDOW_MINUTES": int(env("ORDER_PAYMENT_WINDOW_MINUTES", 60)),
-    # Installments: a grace period before an installment counts as late, and the late fee in percent.
+    # Installments: a grace period before an installment counts as late. No late penalty is charged (it would be riba).
     "INSTALLMENT_GRACE_DAYS": int(env("INSTALLMENT_GRACE_DAYS", 5)),
-    "INSTALLMENT_LATE_FEE_PERCENT": float(env("INSTALLMENT_LATE_FEE_PERCENT", 2)),
+    "INSTALLMENT_LATE_FEE_PERCENT": 0.0,
     "MAX_INSTALLMENT_MONTHS": int(env("MAX_INSTALLMENT_MONTHS", 60)),
     "CROWDFUND_FEE_PERCENT": float(env("CROWDFUND_FEE_PERCENT", 5)),
     "COMPANY_PROFIT_PERCENT": float(env("COMPANY_PROFIT_PERCENT", 5)),
-    # Nebret Equb's commission on every partner-company sale (taken from the company's share).
+    # Nebret's commission on every partner-company sale (taken from the company's share).
     "AGENCY_COMMISSION_PERCENT": float(env("AGENCY_COMMISSION_PERCENT", 5)),
     "REFERRALS_PER_GIVEAWAY_ENTRY": int(env("REFERRALS_PER_GIVEAWAY_ENTRY", 10)),
     "TICKET_SIGNING_KEY": env("TICKET_SIGNING_KEY", SECRET_KEY),
@@ -239,7 +239,7 @@ NEBRET = {
     "PUBLIC_BASE_URL": env("PUBLIC_BASE_URL", "http://localhost:8000"),
     "APP_DEEP_LINK": env("APP_DEEP_LINK", "nebret://payment-result"),
     # Shown on /privacy/ and /account/delete/ – set SUPPORT_EMAIL to the inbox you really read.
-    "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@nebretequb.com"),
+    "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@nebret.et"),
     "PRIVACY_UPDATED": env("PRIVACY_UPDATED", "6 November 2026"),
 }
 
@@ -264,7 +264,7 @@ PAYMENT_GATEWAYS = {
         "ENCRYPTION_KEY": env("CHAPA_ENCRYPTION_KEY", ""),
         # The "secret hash" typed in Chapa dashboard → Settings → Webhooks.
         "WEBHOOK_SECRET": env("CHAPA_WEBHOOK_SECRET", ""),
-        "CHECKOUT_TITLE": env("CHAPA_CHECKOUT_TITLE", "Nebret Equb"),
+        "CHECKOUT_TITLE": env("CHAPA_CHECKOUT_TITLE", "Nebret"),
         "TIMEOUT": int(env("CHAPA_TIMEOUT", 20)),
     },
 }

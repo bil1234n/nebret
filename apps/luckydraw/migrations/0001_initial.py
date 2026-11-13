@@ -134,7 +134,7 @@ class Migration(migrations.Migration):
                     "beneficiary",
                     models.ForeignKey(
                         blank=True,
-                        help_text="Their Nebret Equb account, if any",
+                        help_text="Their Nebret account, if any",
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
                         related_name="crowdfunding_campaigns",
@@ -316,7 +316,7 @@ class Migration(migrations.Migration):
                     "sponsor_type",
                     models.CharField(
                         choices=[
-                            ("COMPANY", "Nebret Equb marketing budget"),
+                            ("COMPANY", "Nebret marketing budget"),
                             ("CORPORATE", "Corporate sponsor"),
                         ],
                         default="COMPANY",
@@ -325,7 +325,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "sponsor_name",
-                    models.CharField(default="Nebret Equb", max_length=120),
+                    models.CharField(default="Nebret", max_length=120),
                 ),
                 (
                     "sponsor_note",
