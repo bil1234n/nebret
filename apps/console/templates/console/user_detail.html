@@ -6,20 +6,20 @@
 {% if u.deletion_status == 'PENDING' %}<div class="msg error" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
   <div><b>Account deletion requested</b> on {{ u.deletion_requested_at|date:"d M Y H:i" }} – the account is suspended until you decide.
     {% if u.deletion_reason %}<div class="small">Reason: “{{ u.deletion_reason }}”</div>{% endif %}
-    {% if blockers.live_equbs or blockers.upcoming_trips %}<div class="small">Check first: {{ blockers.live_equbs }} live Equb place{{ blockers.live_equbs|pluralize }}, {{ blockers.upcoming_trips }} upcoming trip{{ blockers.upcoming_trips|pluralize }}.</div>{% endif %}</div>
+    {% if blockers.live_equbs or blockers.paying_orders or blockers.pending_handovers %}<div class="small">Check first: {{ blockers.live_equbs }} live Equb place{{ blockers.live_equbs|pluralize }}, {{ blockers.paying_orders }} order{{ blockers.paying_orders|pluralize }} being paid, {{ blockers.pending_handovers }} handover{{ blockers.pending_handovers|pluralize }} waiting.</div>{% endif %}</div>
   <a class="btn sm" href="{% url 'console:deletion_requests' %}">Review request</a></div>
 {% elif u.deletion_status == 'DELETED' %}<div class="msg warning">This account was deleted on {{ u.deletion_reviewed_at|date:"d M Y" }}. Personal data has been erased; only anonymous records remain.</div>{% endif %}
 {% if not u.is_staff and not u.has_usable_password and not u.deletion_status %}<div class="msg warning" style="display:flex;justify-content:space-between;align-items:center;gap:12px">This customer was registered at the desk and has no password yet, so they can't sign in to the app. <a class="btn sm" href="{% url 'console:user_edit' u.pk %}">Set a password</a></div>{% endif %}
 <div class="hero">
   <div style="display:flex;gap:18px;align-items:center"><span class="avatar lg" style="background:var(--gold);color:var(--green)">{{ u.full_name|initials }}</span>
     <div><div class="muted small">Customer since {{ u.date_joined|date:"d M Y" }}{% if u.referred_by %} · referred by {{ u.referred_by.full_name }}{% endif %}</div><h2>{{ u.full_name }}</h2><div class="muted">{{ u.phone }}{% if u.email %} · {{ u.email }}{% endif %} · code <span class="mono">{{ u.referral_code }}</span></div></div></div>
-  <div class="stats"><div><b>{{ total_spent|compact }}</b><span>Total paid (ETB)</span></div><div><b>{{ bookings|length }}</b><span>Bookings</span></div><div><b>{{ memberships|length }}</b><span>Equbs</span></div><div><b>{{ referrals|length }}</b><span>Referrals</span></div></div>
+  <div class="stats"><div><b>{{ total_spent|compact }}</b><span>Total paid (ETB)</span></div><div><b>{{ orders|length }}</b><span>Orders</span></div><div><b>{{ memberships|length }}</b><span>Equbs</span></div><div><b>{{ referrals|length }}</b><span>Referrals</span></div></div>
 </div>
 <div class="grid g-21 mt">
-  <div class="card"><div class="card-h"><h2>Bookings</h2></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Trip</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>
-    {% for b in bookings %}<tr><td><a class="mono strong" href="{% url 'console:booking' b.reference %}">{{ b.reference }}</a></td><td>{% if b.flight %}{{ b.flight.origin.iata }} → {{ b.flight.destination.iata }} · {{ b.flight.departure_time|date:"d M" }}{% else %}{{ b.package.name }}{% endif %}</td><td>{{ b.status|status_badge }}</td><td class="r num">{{ b.total_amount|money }}</td></tr>
-    {% empty %}<tr><td colspan="4" class="empty">No bookings.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>Orders</h2><a class="btn ghost sm" href="{% url 'console:sell' %}?phone={{ u.phone|urlencode }}">+ New order</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Item</th><th>Status</th><th class="r">Paid</th><th class="r">Total</th></tr></thead><tbody>
+    {% for o in orders %}<tr><td><a class="mono strong" href="{% url 'console:order' o.reference %}">{{ o.reference }}</a></td><td>{{ o.title|truncatechars:36 }}<div class="small muted">{{ o.get_plan_display }}{% if o.company %} · {{ o.company.name }}{% endif %}</div></td><td>{{ o.status|status_badge:o.get_status_display }}</td><td class="r num">{{ o.amount_paid|money }}</td><td class="r num">{{ o.total_amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No orders.</td></tr>{% endfor %}</tbody></table></div></div>
   <div class="card"><div class="card-h"><h2>Spending mix</h2></div><div class="chart-box sm"><canvas data-chart="spend"></canvas></div></div>
 </div>
 <div class="grid g-3 mt">

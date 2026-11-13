@@ -12,7 +12,7 @@ PHONE, PASSWORD = "+251911000111", "secret-pass-1"
 class AccountDeletionTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(phone=PHONE, password=PASSWORD, full_name="Abebe Kebede",
-                                             email="abebe@example.com", passport_number="EP1234567")
+                                             email="abebe@example.com", national_id="ET-ID-1234567")
         self.staff = User.objects.create_user(phone="+251911000222", password="staff-pass-1", full_name="Staff",
                                               is_staff=True)
         self.api = APIClient()
@@ -62,7 +62,7 @@ class AccountDeletionTests(TestCase):
         self.assertEqual(self.user.deletion_status, User.DeletionStatus.DELETED)
         self.assertEqual(self.user.full_name, "Deleted user")
         self.assertEqual(self.user.email, "")
-        self.assertEqual(self.user.passport_number, "")
+        self.assertEqual(self.user.national_id, "")
         self.assertNotEqual(self.user.phone, PHONE)
         self.assertFalse(self.user.has_usable_password())
         self.assertEqual(self.login().status_code, 401)

@@ -1,0 +1,88 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Order {{ o.reference }}{% endblock %}{% block heading %}Order {{ o.reference }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:orders' %}">Orders</a> / <a href="{% url 'console:user' o.user_id %}">{{ o.user.full_name }}</a> · {{ o.get_plan_display }}{% endblock %}
+{% block actions %}{{ o.status|status_badge:o.get_status_display }}{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Total</div><div class="value">{{ o.total_amount|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ o.get_plan_display }}</div></div>
+  <div class="card kpi"><div class="label">Paid</div><div class="value">{{ o.amount_paid|compact }}</div><div class="sub"><div class="bar"><i style="width:{{ o.progress_percent }}%"></i></div></div></div>
+  <div class="card kpi gold"><div class="label">Balance</div><div class="value">{{ o.balance_due|compact }}</div><div class="sub">{% if o.status == 'RESERVED' %}due by {{ o.reserved_until|date:"d M Y" }}{% elif o.status == 'INSTALLMENTS' and o.next_installment %}next {{ o.next_installment.amount_due|money }} · {{ o.next_installment.due_date|date:"d M" }}{% else %}&nbsp;{% endif %}</div></div>
+  <div class="card kpi"><div class="label">Due now</div><div class="value">{{ o.amount_due_now|compact }}</div><div class="sub">{% if o.status == 'PENDING_PAYMENT' and o.expires_at %}unit held until {{ o.expires_at|date:"d M H:i" }}{% elif o.status == 'PAID' %}hand over by {{ o.handover_due|date:"d M Y" }}{% else %}&nbsp;{% endif %}</div></div>
+</div>
+
+{% if o.status == 'PENDING_PAYMENT' or o.status == 'RESERVED' or o.status == 'INSTALLMENTS' %}
+<form method="post" class="card mt" style="border:2px solid var(--gold)">{% csrf_token %}<input type="hidden" name="action" value="office_payment">
+  <div class="card-h"><h2>Record a payment at the office</h2><span>It settles the first payment, the reservation balance or the oldest installments</span></div>
+  <div class="form-grid">
+    <div class="field"><label>Amount (ETB)</label><input type="number" step="0.01" min="0.01" name="amount" value="{{ o.amount_due_now|stringformat:'s' }}" required></div>
+    <div class="field"><label>Method</label><select name="method">{% for k, v in methods.items %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Reference</label><input type="text" name="reference" placeholder="Bank / mobile-money reference"></div>
+    <div class="field"><label>Note</label><input type="text" name="note"></div>
+  </div>
+  <button class="btn">Record payment</button>
+</form>
+{% elif o.status == 'PAID' %}
+<form method="post" class="card mt" style="border:2px solid var(--gold)">{% csrf_token %}<input type="hidden" name="action" value="handover">
+  <div class="card-h"><h2>Ready for handover</h2><span class="mono small">{{ pass }}</span></div>
+  <div class="field"><label>Handover note</label><input type="text" name="note" placeholder="e.g. keys + title deed handed over · plate AA-3-12345 · serial number"></div>
+  <button class="btn">Mark as handed over</button>
+</form>
+{% elif o.status == 'COMPLETED' %}<div class="msg success mt">Handed over on {{ o.handed_over_at|date:"d M Y, H:i" }}{% if o.handed_over_by %} by {{ o.handed_over_by.full_name }}{% endif %}.{% if o.handover_note %} {{ o.handover_note }}{% endif %}</div>{% endif %}
+
+{% if refund_left > 0 and o.status in 'CANCELLED DEFAULTED EXPIRED' %}
+<form method="post" class="card mt">{% csrf_token %}<input type="hidden" name="action" value="refund">
+  <div class="card-h"><h2>Record a refund</h2><span>{{ refund_left|money }} paid and not refunded yet</span></div>
+  <div class="form-grid">
+    <div class="field"><label>Amount (ETB)</label><input type="number" step="0.01" min="0.01" name="amount" value="{{ refund_left|stringformat:'s' }}"></div>
+    <div class="field"><label>Method</label><select name="method">{% for m in refund_methods %}<option>{{ m }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Reference</label><input type="text" name="reference"></div>
+    <div class="field"><label>Note</label><input type="text" name="note" placeholder="e.g. reservation fee kept as per terms"></div>
+  </div>
+  <button class="btn ghost">Record refund</button>
+</form>{% endif %}
+
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Installment schedule</h2>{% if o.installment_months %}<span>{{ o.installment_months }} months · {{ o.first_payment|money }} down{% if o.finance_charge %} · {{ o.finance_charge|money }} finance charge{% endif %}</span>{% endif %}</div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>Due</th><th class="r">Amount</th><th class="r">Late fee</th><th class="r">Paid</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for i in installments %}<tr><td class="num">{{ i.number }}</td><td class="small">{{ i.due_date|date:"d M Y" }}</td><td class="r num">{{ i.amount|money }}</td>
+      <td class="r num">{% if i.late_fee %}{{ i.late_fee|money }}{% else %}—{% endif %}</td><td class="r num">{{ i.paid_amount|money }}</td><td>{{ i.status|status_badge:i.get_status_display }}</td>
+      <td class="r">{% if i.late_fee and i.status != 'PAID' %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="waive_fee"><input type="hidden" name="installment" value="{{ i.pk }}"><button class="btn ghost xs">Waive fee</button></form>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="7" class="empty">{% if o.plan == 'INSTALLMENT' %}The schedule is created when the down payment is received.{% else %}No installments on this plan.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="card"><div class="card-h"><h2>Order</h2></div>
+    <dl class="kv"><dt>Customer</dt><dd><a href="{% url 'console:user' o.user_id %}">{{ o.user.full_name }}</a><div class="small muted mono">{{ o.contact_phone }}</div></dd>
+      <dt>Item</dt><dd><a href="{% url 'console:listing' o.listing_id %}">{{ o.listing.title }}</a><div class="small muted">{{ o.listing.category.name }}</div></dd>
+      <dt>Unit</dt><dd class="mono">{{ o.unit.code }}{% if o.unit.label %} · {{ o.unit.label }}{% endif %}</dd>
+      <dt>Seller</dt><dd>{% if o.company %}<a href="{% url 'console:agency' o.company_id %}">{{ o.company.name }}</a>{% else %}Nebret Equb{% endif %}</dd>
+      <dt>Buyer on contract</dt><dd>{{ o.buyer_name|default:"—" }}{% if o.buyer_id_number %}<div class="small muted mono">ID {{ o.buyer_id_number }}</div>{% endif %}</dd>
+      <dt>Price</dt><dd>{{ o.unit_price|money }}</dd>
+      {% if o.delivery_fee %}<dt>Delivery</dt><dd>{{ o.delivery_fee|money }}</dd>{% endif %}
+      {% if o.finance_charge %}<dt>Finance charge</dt><dd>{{ o.finance_charge|money }}</dd>{% endif %}
+      <dt>Funding</dt><dd>{{ o.get_funding_source_display }}{% if o.funding_reference %} <span class="mono small">{{ o.funding_reference }}</span>{% endif %}</dd>
+      <dt>Handover</dt><dd>{{ o.get_delivery_method_display }}{% if o.delivery_address %}<div class="small muted">{{ o.delivery_address }}</div>{% endif %}</dd>
+      {% if o.note %}<dt>Customer note</dt><dd>{{ o.note }}</dd>{% endif %}
+      {% if o.refunded_amount %}<dt>Refunded</dt><dd>{{ o.refunded_amount|money }} · {{ o.refund_method }}</dd>{% endif %}</dl>
+    {% if o.status == 'PENDING_PAYMENT' or o.status == 'RESERVED' or o.status == 'INSTALLMENTS' or o.status == 'PAID' %}
+    <form method="post" style="margin-top:14px" data-confirm="Cancel order {{ o.reference }}? The unit goes back on sale. {{ policy.message }}">{% csrf_token %}<input type="hidden" name="action" value="cancel">
+      <div class="field"><label>Reason</label><input type="text" name="reason"></div><button class="btn danger sm">Cancel order</button></form>{% endif %}
+  </div>
+</div>
+
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Payments</h2></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Method</th><th>Status</th><th class="r">Amount</th></tr></thead><tbody>
+    {% for p in payments %}<tr><td class="small">{{ p.created_at|date:"d M, H:i" }}</td><td>{{ p.get_provider_display }}<div class="small muted">{{ p.purpose|purpose_short }}{% if p.recorded_by %} · {{ p.recorded_by.full_name }}{% endif %}</div></td><td>{{ p.status|status_badge }}{% if p.failure_reason %}<div class="small muted">{{ p.failure_reason }}</div>{% endif %}</td><td class="r num">{{ p.amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="empty">No payment yet.</td></tr>{% endfor %}</tbody></table></div>
+    <form method="post" class="mt">{% csrf_token %}<input type="hidden" name="action" value="message">
+      <div class="card-h"><h2>Message the customer</h2></div>
+      <div class="field"><input type="text" name="title" placeholder="Title (optional)"></div>
+      <div class="field"><textarea name="body" rows="2" placeholder="e.g. Your title deed is ready for collection."></textarea></div>
+      <button class="btn ghost sm">Send in the app</button></form>
+  </div>
+  <div class="card"><div class="card-h"><h2>Activity</h2></div>
+    <form method="post" class="toolbar" style="margin:0 0 10px">{% csrf_token %}<input type="hidden" name="action" value="note"><input class="grow" type="text" name="note" placeholder="Add an internal note…"><button class="btn ghost sm">Add</button></form>
+    {% for e in events %}<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div class="small"><span class="badge b-{{ e.tone }}">{{ e.get_kind_display }}</span> {{ e.message }}</div><div class="small muted">{{ e.created_at|date:"d M Y, H:i" }}{% if e.by %} · {{ e.by.full_name }}{% endif %}</div></div>
+    {% empty %}<div class="empty">Nothing yet.</div>{% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -73,7 +73,7 @@ class MyDonationsViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
 
 class GiveawayViewSet(viewsets.ReadOnlyModelViewSet):
-    """Community Giveaways – free, sponsored trips. Invite friends: every 10 who register = 1 free entry."""
+    """Community Giveaways – free, sponsored prizes. Invite friends: every 10 who register = 1 free entry."""
 
     serializer_class = GiveawaySerializer
     permission_classes = [IsStaffOrReadOnly]
@@ -122,7 +122,7 @@ class MyWinsViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
     def claim(self, request, pk=None):
         s = ClaimSerializer(data=request.data)
         s.is_valid(raise_exception=True)
-        w = services.claim_prize(self.get_object(), booking_reference=s.validated_data.get("booking_reference"))
+        w = services.claim_prize(self.get_object(), order_reference=s.validated_data.get("order_reference"))
         return Response(MyWinSerializer(w, context={"request": request}).data)
 
 

@@ -1,13 +1,13 @@
 """
-Agency portal (/agency/): a travel agency's own workspace on Vacation Equb.
+Company portal (/company/): a partner company's own workspace on Nebret Equb.
 
-Agency staff sign in with the same login page as the console and only ever see their own agency's data:
-customers and their families, Equb places, ticket & package bookings, and their earnings after Vacation Equb's
-commission.
+Company staff sign in with the same login page as the console and only ever see their own company's data: their
+listings and stock, orders and installments, handovers, customer inquiries, customers and their families, Equb places
+and their earnings after Nebret Equb's commission.
 """
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from functools import wraps
 
 from django.contrib import messages
@@ -20,9 +20,11 @@ from django.views.decorators.http import require_POST
 
 from apps.core.exceptions import BusinessRuleError
 from apps.equb.models import EqubGroup, EqubMembership
+from apps.market.models import Inquiry, Listing, ListingUnit, Order
+from apps.market.services import handover as handover_svc
+from apps.market.services import operations as ops
+from apps.market.services import orders as order_svc
 from apps.payments.models import PaymentTransaction
-from apps.travel.models import Airport, Booking, FareClass, Flight, TravelPackage
-from apps.travel.services import bookings as booking_svc
 
 from . import forms as f
 from . import services
@@ -32,7 +34,7 @@ PER_PAGE = 25
 
 
 def agency_required(manage: bool = False):
-    """Only signed-in staff of an active (or pending) agency; ``manage`` = owners and managers only."""
+    """Only signed-in staff of an active (or pending) company; ``manage`` = owners and managers only."""
 
     def deco(view):
         @wraps(view)
@@ -41,10 +43,10 @@ def agency_required(manage: bool = False):
                 return redirect(f"{reverse('console:login')}?next={request.get_full_path()}")
             st = services.staff_for(request.user)
             if st is None:
-                messages.error(request, "This account is not linked to an active travel agency.")
+                messages.error(request, "This account is not linked to an active partner company.")
                 return redirect("console:login")
             if manage and not st.can_manage:
-                messages.error(request, "Only the agency owner or a manager can do that.")
+                messages.error(request, "Only the company owner or a manager can do that.")
                 return redirect("agency:dashboard")
             request.agency_staff, request.agency = st, st.agency
             return view(request, *args, **kwargs)
@@ -75,29 +77,236 @@ def _customer(request, pk) -> AgencyCustomer:
     return get_object_or_404(AgencyCustomer.objects.select_related("user"), pk=pk, agency=request.agency)
 
 
-def _agency_bookings(request):
-    return Booking.objects.filter(user__agency_link__agency=request.agency)
+def _orders(request):
+    return services.company_orders(request.agency).select_related("user", "listing", "unit")
+
+
+def _listings(request):
+    return Listing.objects.filter(company=request.agency)
 
 
 # --------------------------------------------------------------------------- dashboard
 @agency_required()
 def dashboard(request):
     a = request.agency
-    month_start = timezone.localdate().replace(day=1)
-    since = timezone.make_aware(datetime.combine(month_start, time.min))
-    bookings = _agency_bookings(request)
-    month = services.summary(a, since=since)
-    total = services.summary(a)
-    recent = a.ledger.select_related("customer", "booking").order_by("-created_at")[:8]
-    pending = bookings.filter(status=Booking.Status.PENDING_PAYMENT).select_related("user", "flight__origin",
-                                                                                     "flight__destination", "package")[:6]
-    equb_places = EqubMembership.objects.filter(user__agency_link__agency=a, status__in=EqubMembership.LIVE_STATUSES)
+    since = timezone.make_aware(datetime.combine(timezone.localdate().replace(day=1), time.min))
+    orders = _orders(request)
+    listings = _listings(request)
     return render(request, "agencies/dashboard.html", _ctx(
-        request, "dashboard", month=month, total=total, recent=recent, pending=pending,
-        counts={"customers": a.customers.count(),
-                "family": FamilyMember.objects.filter(customer__agency=a).count(),
-                "equb": equb_places.count(),
-                "trips": bookings.filter(status=Booking.Status.CONFIRMED).count()}))
+        request, "dashboard", month=services.summary(a, since=since), total=services.summary(a),
+        recent=a.ledger.select_related("customer", "order").order_by("-created_at")[:8],
+        pending=orders.filter(status=Order.Status.PENDING_PAYMENT).order_by("expires_at")[:6],
+        handovers=orders.filter(status=Order.Status.PAID).order_by("handover_due")[:6],
+        counts={"listings": listings.filter(status=Listing.Status.ACTIVE).count(),
+                "units": ListingUnit.objects.filter(listing__company=a, status=ListingUnit.Status.AVAILABLE).count(),
+                "active_orders": orders.filter(status__in=Order.LIVE_STATUSES).count(),
+                "installments": orders.filter(status=Order.Status.INSTALLMENTS).count(),
+                "inquiries": Inquiry.objects.filter(listing__company=a, status=Inquiry.Status.OPEN).count(),
+                "customers": a.customers.count()}))
+
+
+# --------------------------------------------------------------------------- listings & stock
+@agency_required()
+def listings(request):
+    q, status = request.GET.get("q", "").strip(), request.GET.get("status", "")
+    qs = _listings(request).select_related("category").annotate(
+        available=Count("units", filter=Q(units__status=ListingUnit.Status.AVAILABLE), distinct=True),
+        sold=Count("units", filter=Q(units__status=ListingUnit.Status.SOLD), distinct=True),
+        n_orders=Count("orders", filter=Q(orders__status__in=Order.LIVE_STATUSES), distinct=True)).order_by("-created_at")
+    if q:
+        qs = qs.filter(Q(title__icontains=q) | Q(brand__icontains=q) | Q(model_name__icontains=q))
+    if status:
+        qs = qs.filter(status=status)
+    return render(request, "agencies/listings.html", _ctx(request, "listings", page=_page(request, qs), q=q,
+                                                         status=status, statuses=Listing.Status.choices))
+
+
+@agency_required(manage=True)
+def listing_form(request, pk=None):
+    obj = get_object_or_404(_listings(request), pk=pk) if pk else None
+    form = f.ListingForm(request.POST or None, instance=obj, company_portal=True)
+    if request.method == "POST" and form.is_valid():
+        listing = form.save(commit=False)
+        listing.company = request.agency
+        if not obj:
+            listing.created_by = request.user
+            if request.agency.status != "ACTIVE":
+                listing.status = Listing.Status.DRAFT
+        listing.save()
+        form.save_gallery(listing)
+        if not obj and form.cleaned_data.get("initial_units"):
+            listing.add_units(form.cleaned_data["initial_units"])
+        messages.success(request, f"“{listing.title}” saved.")
+        return redirect("agency:listing", pk=listing.pk)
+    return render(request, "agencies/form.html", _ctx(
+        request, "listings", form=form, obj=obj, title=f"{'Edit' if obj else 'New'} listing",
+        cancel=reverse("agency:listing", args=[obj.pk]) if obj else reverse("agency:listings")))
+
+
+@agency_required()
+def listing_detail(request, pk):
+    listing = get_object_or_404(_listings(request).select_related("category"), pk=pk)
+    here = reverse("agency:listing", args=[pk])
+    units_form = f.UnitsForm(request.POST if request.POST.get("action") == "add_units" else None)
+    if request.method == "POST":
+        if not request.agency_staff.can_manage:
+            messages.error(request, "Only the company owner or a manager can change stock.")
+            return redirect(here)
+        action = request.POST.get("action")
+        if action == "add_units" and units_form.is_valid():
+            listing.add_units(units_form.cleaned_data["count"], prefix=units_form.cleaned_data["prefix"])
+            messages.success(request, f"{units_form.cleaned_data['count']} unit(s) added.")
+        elif action in ("block", "unblock", "rename"):
+            unit = get_object_or_404(ListingUnit, pk=request.POST.get("unit"), listing=listing)
+            if action == "rename":
+                unit.label = request.POST.get("label", "")[:120]
+                unit.save(update_fields=["label"])
+            elif unit.status in (ListingUnit.Status.AVAILABLE, ListingUnit.Status.BLOCKED):
+                unit.status = ListingUnit.Status.BLOCKED if action == "block" else ListingUnit.Status.AVAILABLE
+                unit.save(update_fields=["status"])
+                listing.refresh_stock_status()
+            else:
+                messages.error(request, "Units that are held, reserved or sold can't be changed.")
+        elif action in ("publish", "unpublish"):
+            if action == "publish" and request.agency.status != "ACTIVE":
+                messages.error(request, "Your company must be approved before listings go live.")
+            else:
+                listing.status = Listing.Status.ACTIVE if action == "publish" else Listing.Status.DRAFT
+                listing.save(update_fields=["status", "updated_at"])
+                listing.refresh_stock_status()
+        return redirect(here)
+    units = listing.units.select_related("held_by").prefetch_related("orders")
+    return render(request, "agencies/listing_detail.html", _ctx(
+        request, "listings", l=listing, units=units, units_form=units_form,
+        orders=listing.orders.select_related("user", "unit").order_by("-created_at")[:20],
+        stock={s: units.filter(status=s).count() for s in ListingUnit.Status.values}))
+
+
+# --------------------------------------------------------------------------- orders & handover
+@agency_required()
+def orders(request):
+    status, plan, q = request.GET.get("status", ""), request.GET.get("plan", ""), request.GET.get("q", "").strip()
+    qs = _orders(request)
+    if status:
+        qs = qs.filter(status=status)
+    if plan:
+        qs = qs.filter(plan=plan)
+    if q:
+        qs = qs.filter(Q(reference__iexact=q) | Q(user__full_name__icontains=q) | Q(user__phone__icontains=q)
+                       | Q(listing__title__icontains=q) | Q(unit__code__iexact=q))
+    return render(request, "agencies/orders.html", _ctx(
+        request, "orders", page=_page(request, qs.order_by("-created_at")), status=status, plan=plan, q=q,
+        statuses=Order.Status.choices, plans=Order.Plan.choices))
+
+
+@agency_required()
+def order_detail(request, reference):
+    o = get_object_or_404(_orders(request), reference=reference)
+    here = reverse("agency:order", args=[reference])
+    if request.method == "POST":
+        a, p = request.POST.get("action"), request.POST
+        if a == "pay_link":
+            if _do(request, lambda: services.start_checkout(o, count=int(p.get("count") or 1))):
+                messages.success(request, "Payment link ready – open it now or send it to the customer.")
+        elif a == "refresh":
+            from apps.payments.services import refresh_from_provider
+
+            for txn in PaymentTransaction.objects.filter(object_id=o.pk, purpose__in=["ORDER", "INSTALLMENT"],
+                                                         status__in=["INITIATED", "PENDING"]):
+                refresh_from_provider(txn)
+            messages.info(request, "Payment status checked with the provider.")
+        elif a == "office_payment":
+            _do(request, lambda: ops.record_office_payment(o, request.user, amount=p.get("amount") or 0,
+                                                           method=p.get("method", ""), reference=p.get("reference", ""),
+                                                           note=p.get("note", "")), "Payment recorded.")
+        elif a == "handover":
+            _do(request, lambda: order_svc.complete_handover(o, staff=request.user, note=p.get("note", "")),
+                "Handover recorded – the customer has been notified.")
+        elif a == "cancel":
+            if not request.agency_staff.can_manage:
+                messages.error(request, "Only the company owner or a manager can cancel orders.")
+            else:
+                _do(request, lambda: order_svc.cancel_order(o, p.get("reason") or f"Cancelled by {request.agency.name}",
+                                                            staff=request.user), "Order cancelled – the unit is back on sale.")
+        elif a == "note":
+            _do(request, lambda: ops.add_note(o, request.user, p.get("note", "")), "Note added.")
+        return redirect(here)
+    payments = PaymentTransaction.objects.filter(purpose__in=["ORDER", "INSTALLMENT"], object_id=o.pk,
+                                                 content_type__model="order").order_by("-created_at")
+    live = next((t for t in payments if t.status in ("INITIATED", "PENDING") and t.checkout_url), None)
+    return render(request, "agencies/order_detail.html", _ctx(
+        request, "orders", o=o, payments=payments, live=live, installments=o.installments.all(),
+        options=order_svc.installment_options(o) if o.status == Order.Status.INSTALLMENTS else [],
+        events=o.events.select_related("by")[:40], entries=AgencyLedgerEntry.objects.filter(order=o),
+        methods=ops.OFFICE_METHODS))
+
+
+@agency_required()
+def handover_desk(request):
+    """Type an order reference or scan the customer's handover pass."""
+    found, payload = None, request.POST.get("payload", "").strip() if request.method == "POST" else ""
+    if payload:
+        found = handover_svc.verify_pass(payload)
+        if not found or found.company_id != request.agency.id:
+            messages.error(request, "That pass is not valid for your company.")
+            found = None
+    due = _orders(request).filter(status=Order.Status.PAID).order_by("handover_due")[:30]
+    return render(request, "agencies/handover.html", _ctx(request, "handover", found=found, payload=payload, due=due))
+
+
+@agency_required()
+def sell(request):
+    """Place an order for one of the company's customers."""
+    c = _customer(request, request.GET.get("customer") or request.POST.get("customer") or 0) \
+        if (request.GET.get("customer") or request.POST.get("customer")) else None
+    live = _listings(request).filter(status=Listing.Status.ACTIVE)
+    form = f.SaleForm(request.POST or None, listings=live,
+                      initial={"listing": request.GET.get("listing"), "buyer_name": c.user.full_name if c else ""})
+    if request.method == "POST" and c and form.is_valid():
+        d = form.cleaned_data
+        o = _do(request, lambda: order_svc.create_order(
+            user=c.user, listing=d["listing"], plan=d["plan"], months=d.get("months") or 0,
+            down_payment=d.get("down_payment"), delivery_method=d["delivery_method"],
+            delivery_address=d.get("delivery_address", ""), buyer_name=d.get("buyer_name", ""),
+            buyer_id_number=d.get("buyer_id_number", ""), by=request.user))
+        if o:
+            order_svc.log_event(o, "NOTE", f"Sold by {request.user.full_name} ({request.agency.name}).", by=request.user)
+            messages.success(request, f"Order {o.reference} created – {o.first_payment:,.2f} ETB is due now. Record the "
+                                      "payment or send the customer the payment link.")
+            return redirect("agency:order", reference=o.reference)
+    elif request.method == "POST" and not c:
+        messages.error(request, "Choose the customer first.")
+    return render(request, "agencies/sell.html", _ctx(
+        request, "sell", c=c, form=form, customers=request.agency.customers.select_related("user")
+        .order_by("user__full_name")))
+
+
+# --------------------------------------------------------------------------- inquiries
+@agency_required()
+def inquiries(request):
+    status = request.GET.get("status", "OPEN")
+    qs = Inquiry.objects.filter(listing__company=request.agency).select_related("listing", "user")
+    if request.method == "POST":
+        inq = get_object_or_404(qs, pk=request.POST.get("inquiry"))
+        reply = request.POST.get("reply", "").strip()
+        if reply:
+            from apps.notifications.models import Notification
+            from apps.notifications.services import notify
+
+            inq.reply, inq.status = reply[:2000], Inquiry.Status.ANSWERED
+            inq.replied_by, inq.replied_at = request.user, timezone.now()
+            inq.save()
+            notify(inq.user, Notification.Kind.ORDER, f"{request.agency.name} replied",
+                   f"About {inq.listing.title}: {reply[:300]}", {"listing": inq.listing.slug})
+            messages.success(request, "Reply sent to the customer.")
+        elif request.POST.get("action") == "close":
+            inq.status = Inquiry.Status.CLOSED
+            inq.save(update_fields=["status", "updated_at"])
+        return redirect(f"{reverse('agency:inquiries')}?status={status}")
+    if status:
+        qs = qs.filter(status=status)
+    return render(request, "agencies/inquiries.html", _ctx(request, "inquiries", page=_page(request, qs), status=status,
+                                                          statuses=Inquiry.Status.choices))
 
 
 # --------------------------------------------------------------------------- customers
@@ -106,7 +315,9 @@ def customers(request):
     q = request.GET.get("q", "").strip()
     qs = services.search_customers(request.agency, q).annotate(
         n_family=Count("family", distinct=True),
-        n_trips=Count("user__bookings", filter=Q(user__bookings__status=Booking.Status.CONFIRMED), distinct=True),
+        n_orders=Count("user__orders", filter=Q(user__orders__company=request.agency,
+                                                user__orders__status__in=[*Order.LIVE_STATUSES, Order.Status.COMPLETED]),
+                       distinct=True),
         n_equb=Count("user__equb_memberships", filter=Q(user__equb_memberships__status__in=EqubMembership.LIVE_STATUSES),
                      distinct=True)).order_by("-created_at")
     return render(request, "agencies/customers.html", _ctx(request, "customers", page=_page(request, qs), q=q,
@@ -124,7 +335,7 @@ def customer_add(request):
         if res:
             cust, created = res
             messages.success(request, f"{cust.user.full_name} is now your customer"
-                             + ("." if created else " (they already had a Vacation Equb account)."))
+                             + ("." if created else " (they already had a Nebret Equb account)."))
             if request.POST.get("_another"):
                 return redirect("agency:customer_add")
             return redirect("agency:customer", pk=cust.pk)
@@ -151,10 +362,10 @@ def customer_detail(request, pk):
         return redirect(here)
     places = (EqubMembership.objects.filter(user=c.user).exclude(status=EqubMembership.Status.LEFT)
               .select_related("group").order_by("-created_at"))
-    trips = (Booking.objects.filter(user=c.user).select_related("flight__origin", "flight__destination", "package")
-             .order_by("-created_at")[:20])
+    purchases = (Order.objects.filter(user=c.user, company=request.agency).select_related("listing", "unit")
+                 .order_by("-created_at")[:20])
     return render(request, "agencies/customer_detail.html", _ctx(
-        request, "customers", c=c, family=c.family.all(), places=places, trips=trips))
+        request, "customers", c=c, family=c.family.all(), places=places, purchases=purchases))
 
 
 @agency_required()
@@ -211,127 +422,12 @@ def equb_enrol(request, slug):
         request, "equb", g=g, customers=custs, pre=request.GET.get("customer", "")))
 
 
-# --------------------------------------------------------------------------- booking
-@agency_required()
-def book(request):
-    """Step 1: pick the customer, then a flight (search) or a package."""
-    a = request.agency
-    cust = None
-    if request.GET.get("customer"):
-        cust = _customer(request, request.GET["customer"])
-    origin, dest, day = (request.GET.get(k, "").strip() for k in ("origin", "destination", "date"))
-    flights = Flight.objects.filter(departure_time__gt=timezone.now() + timedelta(hours=2),
-                                    status__in=[Flight.Status.SCHEDULED, Flight.Status.DELAYED])
-    if origin:
-        flights = flights.filter(origin__iata=origin.upper())
-    if dest:
-        flights = flights.filter(destination__iata=dest.upper())
-    if day:
-        flights = flights.filter(departure_time__date=day)
-    flights = flights.select_related("origin", "destination").prefetch_related("fares").order_by("departure_time")[:30]
-    packages = TravelPackage.objects.filter(is_active=True, departure_date__gt=timezone.localdate()).order_by(
-        "departure_date")[:12]
-    return render(request, "agencies/book.html", _ctx(
-        request, "book", cust=cust, customers=a.customers.select_related("user").order_by("user__full_name"),
-        flights=flights, packages=packages, airports=Airport.objects.order_by("city"),
-        origin=origin, destination=dest, date=day))
-
-
-def _traveller_initial(c: AgencyCustomer, picked: list[str]) -> list[dict]:
-    rows = []
-    if "self" in picked:
-        first, _, last = c.user.full_name.partition(" ")
-        rows.append({"first_name": first, "last_name": last or first, "date_of_birth": c.user.date_of_birth,
-                     "passport_number": c.user.passport_number, "passport_expiry": c.user.passport_expiry})
-    for fm in c.family.filter(pk__in=[p for p in picked if p.isdigit()]):
-        rows.append({"first_name": fm.first_name, "last_name": fm.last_name, "gender": fm.gender,
-                     "date_of_birth": fm.date_of_birth, "passport_number": fm.passport_number,
-                     "passport_expiry": fm.passport_expiry})
-    return rows or [{}]
-
-
-def _book_product(request, *, fare: FareClass | None = None, package: TravelPackage | None = None):
-    c = _customer(request, request.GET.get("customer") or request.POST.get("customer") or 0)
-    picked = request.GET.getlist("who") or ["self"]
-    formset = f.TravellerFormSet(request.POST or None, initial=None if request.method == "POST"
-                                 else _traveller_initial(c, picked), prefix="pax")
-    if request.method == "POST" and formset.is_valid():
-        pax = [services.passenger_from(**{k: v for k, v in row.items() if k != "DELETE"})
-               for row in formset.cleaned_data if row]
-        kw = dict(user=c.user, passengers=pax, contact_phone=c.user.phone, contact_email=c.user.email)
-        b = _do(request, lambda: (booking_svc.create_flight_booking(fare_class_id=fare.pk, **kw) if fare
-                                  else booking_svc.create_package_booking(package_id=package.pk, **kw)))
-        if b:
-            booking_svc.log_event(b, "NOTE", f"Booked by {request.user.full_name} for {request.agency.name}.",
-                                  by=request.user)
-            messages.success(request, f"Booking {b.reference} created – seats held until "
-                                      f"{timezone.localtime(b.expires_at):%H:%M}. Send the customer the payment link.")
-            return redirect("agency:booking", reference=b.reference)
-    return render(request, "agencies/book_travellers.html", _ctx(
-        request, "book", c=c, fare=fare, package=package, formset=formset,
-        family=c.family.all(), picked=picked))
-
-
-@agency_required()
-def book_flight(request, fare_id):
-    fare = get_object_or_404(FareClass.objects.select_related("flight__origin", "flight__destination"), pk=fare_id)
-    return _book_product(request, fare=fare)
-
-
-@agency_required()
-def book_package(request, pk):
-    package = get_object_or_404(TravelPackage, pk=pk, is_active=True)
-    return _book_product(request, package=package)
-
-
-@agency_required()
-def bookings(request):
-    status = request.GET.get("status", "")
-    q = request.GET.get("q", "").strip()
-    qs = _agency_bookings(request).select_related("user", "flight__origin", "flight__destination", "package")
-    if status:
-        qs = qs.filter(status=status)
-    if q:
-        qs = qs.filter(Q(reference__iexact=q) | Q(user__full_name__icontains=q) | Q(user__phone__icontains=q))
-    return render(request, "agencies/bookings.html", _ctx(
-        request, "bookings", page=_page(request, qs.order_by("-created_at")), status=status, q=q,
-        statuses=Booking.Status.choices))
-
-
-@agency_required()
-def booking_detail(request, reference):
-    b = get_object_or_404(_agency_bookings(request).select_related(
-        "user", "flight__origin", "flight__destination", "fare_class", "package"), reference=reference)
-    if request.method == "POST":
-        action = request.POST.get("action")
-        if action == "pay":
-            txn = _do(request, lambda: services.start_checkout(b))
-            if txn:
-                messages.success(request, "Payment link ready – open it now or send it to the customer.")
-        elif action == "refresh":
-            from apps.payments.services import refresh_from_provider
-
-            for txn in PaymentTransaction.objects.filter(object_id=b.pk, purpose="BOOKING", status__in=["INITIATED", "PENDING"]):
-                refresh_from_provider(txn)
-            messages.info(request, "Payment status checked with the provider.")
-        elif action == "cancel":
-            _do(request, lambda: booking_svc.cancel_booking(b, f"Cancelled by {request.agency.name}"),
-                "Booking cancelled – the seats were released.")
-        return redirect("agency:booking", reference=reference)
-    payments = PaymentTransaction.objects.filter(purpose="BOOKING", object_id=b.pk).order_by("-created_at")
-    live = next((p for p in payments if p.status in ("INITIATED", "PENDING") and p.checkout_url), None)
-    entries = AgencyLedgerEntry.objects.filter(booking=b)
-    return render(request, "agencies/booking_detail.html", _ctx(
-        request, "bookings", b=b, passengers=b.passengers.select_related("seat"), payments=payments, live=live,
-        entries=entries, policy=booking_svc.cancellation_policy(b)))
-
-
-# --------------------------------------------------------------------------- earnings & team
+# --------------------------------------------------------------------------- earnings, team, profile
 @agency_required()
 def earnings(request):
     a = request.agency
     status = request.GET.get("payout", "")
-    qs = a.ledger.select_related("customer", "booking")
+    qs = a.ledger.select_related("customer", "order")
     if status:
         qs = qs.filter(payout_status=status)
     return render(request, "agencies/earnings.html", _ctx(
@@ -345,7 +441,7 @@ def team(request):
     form = f.StaffForm(request.POST or None)
     if request.method == "POST":
         if not request.agency_staff.can_manage:
-            messages.error(request, "Only the agency owner or a manager can manage the team.")
+            messages.error(request, "Only the company owner or a manager can manage the team.")
             return redirect("agency:team")
         if request.POST.get("action") == "toggle":
             st = get_object_or_404(AgencyStaff, pk=request.POST.get("staff"), agency=a)
@@ -369,7 +465,15 @@ def team(request):
 
 @agency_required()
 def profile(request):
-    return render(request, "agencies/profile.html", _ctx(request, "profile"))
+    form = f.CompanyProfileForm(request.POST or None, instance=request.agency)
+    if request.method == "POST":
+        if not request.agency_staff.can_manage:
+            messages.error(request, "Only the company owner or a manager can edit the profile.")
+        elif form.is_valid():
+            form.save()
+            messages.success(request, "Company profile saved.")
+            return redirect("agency:profile")
+    return render(request, "agencies/profile.html", _ctx(request, "profile", form=form))
 
 
 @require_POST
@@ -378,3 +482,6 @@ def logout_view(request):
 
     logout(request)
     return redirect("console:login")
+
+
+__all__ = ["Sum"]

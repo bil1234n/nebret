@@ -2,8 +2,7 @@
 from datetime import timedelta
 
 from django.contrib import messages
-from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -11,86 +10,15 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.equb.models import EqubGroup, EqubPackage, EqubSettings
-from apps.travel.models import Airport, BaggageOption, FareClass, Flight, TravelPackage
+from apps.market.models import Category, Listing
 
 from . import forms as f
 from .views import staff_required
-
-DEFAULT_FARES = [
-    {"cabin": "ECONOMY", "code": "K", "name": "Economy Saver", "checked_baggage_kg": 23, "cabin_baggage_kg": 7, "change_fee": 2500},
-    {"cabin": "ECONOMY", "code": "Y", "name": "Economy Flex", "checked_baggage_kg": 46, "cabin_baggage_kg": 7, "refundable": True, "free_seat_selection": True},
-    {"cabin": "BUSINESS", "code": "J", "name": "Business", "checked_baggage_kg": 64, "cabin_baggage_kg": 14, "refundable": True, "free_seat_selection": True},
-]
 
 
 def _render(request, *, nav, title, crumbs, form, cancel, delete_url=None, formset=None, intro=None, obj=None):
     return render(request, "console/form.html", {"nav": nav, "title": title, "crumbs": crumbs, "form": form, "formset": formset,
                                                  "cancel": cancel, "delete_url": delete_url, "intro": intro, "obj": obj})
-
-
-@staff_required
-def package_form(request, pk=None):
-    obj = get_object_or_404(TravelPackage, pk=pk) if pk else None
-    form = f.PackageForm(request.POST or None, instance=obj)
-    if request.method == "POST" and form.is_valid():
-        pkg = form.save()
-        messages.success(request, f"Package “{pkg.name}” {'updated' if obj else 'created'}.")
-        return redirect("console:packages")
-    return _render(request, nav="packages", title=f"Edit {obj.name}" if obj else "New travel package",
-                   crumbs="Hajj, Umrah & tours", form=form, cancel=reverse("console:packages"), obj=obj,
-                   delete_url=reverse("console:package_delete", args=[obj.pk]) if obj and not obj.bookings.exists() else None)
-
-
-@staff_required
-@require_POST
-def package_delete(request, pk):
-    obj = get_object_or_404(TravelPackage, pk=pk)
-    if obj.bookings.exists():
-        messages.error(request, "This package has bookings; untick “Available for booking” instead.")
-    else:
-        obj.delete()
-        messages.success(request, "Package deleted.")
-    return redirect("console:packages")
-
-
-@staff_required
-def flight_form(request, pk=None):
-    obj = get_object_or_404(Flight, pk=pk) if pk else None
-    form = f.FlightForm(request.POST or None, instance=obj)
-    FS = f.forms.inlineformset_factory(Flight, FareClass, form=f.FareForm, formset=f.BaseFareFormSet,
-                                       extra=0 if obj else 3, can_delete=True)
-    formset = FS(request.POST or None, instance=obj or Flight(), prefix="fares", initial=None if obj else DEFAULT_FARES)
-    if request.method == "POST":
-        form_ok = form.is_valid()  # validate both so every error shows at once
-        formset.aircraft = (getattr(form, "cleaned_data", {}) or {}).get("aircraft") or (obj.aircraft if obj else None)
-        fares_ok = formset.is_valid()
-    if request.method == "POST" and form_ok and fares_ok:
-        with transaction.atomic():
-            flight = form.save()
-            formset.instance = flight
-            formset.save()
-            created = flight.generate_seats()
-        msg = f"Flight {flight.flight_number} {'updated' if obj else 'created'}."
-        if created:
-            msg += f" Seat map generated ({created} seats)."
-        messages.success(request, msg)
-        return redirect("console:flight", pk=flight.pk)
-    return _render(request, nav="flights", title=f"Edit {obj.flight_number}" if obj else "New flight", crumbs="Flights & seats",
-                   form=form, formset=formset, cancel=reverse("console:flight", args=[obj.pk]) if obj else reverse("console:flights"),
-                   obj=obj, intro="Seats are generated automatically from the aircraft layout when you save.",
-                   delete_url=reverse("console:flight_delete", args=[obj.pk]) if obj and not obj.bookings.exists() else None)
-
-
-@staff_required
-@require_POST
-def flight_delete(request, pk):
-    obj = get_object_or_404(Flight, pk=pk)
-    if obj.bookings.exists():
-        messages.error(request, "This flight has bookings; set its status to Cancelled instead.")
-        return redirect("console:flight", pk=pk)
-    obj.delete()
-    messages.success(request, "Flight deleted.")
-    return redirect("console:flights")
 
 
 @staff_required
@@ -175,10 +103,11 @@ def equb_package_delete(request, slug):
 def settings_page(request):
     return render(request, "console/settings.html", {
         "nav": "settings",
-        "airports": Airport.objects.annotate(n=Count("departures", distinct=True) + Count("arrivals", distinct=True)).order_by("city"),
-        "bags": BaggageOption.objects.all(),
+        "categories": Category.objects.annotate(
+            n=Count("listings", distinct=True),
+            live=Count("listings", filter=Q(listings__status=Listing.Status.ACTIVE), distinct=True)).order_by(
+            "group", "sort_order", "name"),
         "staff": User.objects.filter(is_staff=True).order_by("-is_superuser", "full_name"),
-        "aircraft": f.AircraftType.objects.all(),
         "equb_rules": EqubSettings.load(),
     })
 
@@ -195,13 +124,8 @@ def _simple(request, form_cls, model, pk, title_new, label):
 
 
 @staff_required
-def airport_form(request, pk=None):
-    return _simple(request, f.AirportForm, Airport, pk, "New airport", "Airport")
-
-
-@staff_required
-def baggage_form(request, pk=None):
-    return _simple(request, f.BaggageForm, BaggageOption, pk, "New baggage option", "Baggage option")
+def category_form(request, pk=None):
+    return _simple(request, f.CategoryForm, Category, pk, "New marketplace category", "Category")
 
 
 @staff_required

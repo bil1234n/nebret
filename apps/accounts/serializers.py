@@ -14,7 +14,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "phone", "email", "full_name", "preferred_language", "national_id",
-            "passport_number", "passport_expiry", "date_of_birth", "referral_code",
+            "date_of_birth", "city", "address", "referral_code",
             "referrals_count", "is_phone_verified", "date_joined",
         ]
         read_only_fields = ["phone", "referral_code", "is_phone_verified", "date_joined"]
@@ -69,7 +69,7 @@ class AccountDeletionPending(APIException):
 
     status_code = status.HTTP_403_FORBIDDEN
     default_detail = ("This account is suspended because you asked us to delete it. Our team is reviewing the request. "
-                      "Contact Vacation Equb support if you want to keep your account.")
+                      "Contact Nebret Equb support if you want to keep your account.")
     default_code = "deletion_pending"
 
 

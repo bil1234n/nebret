@@ -68,11 +68,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     full_name = models.CharField(max_length=150)
     preferred_language = models.CharField(max_length=2, choices=Language.choices, default=Language.ENGLISH)
 
-    # Travel documents (used to pre-fill passenger forms)
-    national_id = models.CharField(max_length=32, blank=True)
-    passport_number = models.CharField(max_length=32, blank=True)
-    passport_expiry = models.DateField(null=True, blank=True)
+    # Buyer details (used to pre-fill orders and sale contracts)
+    national_id = models.CharField("National ID / Kebele ID", max_length=32, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
+    city = models.CharField(max_length=80, blank=True)
+    address = models.CharField(max_length=255, blank=True, help_text="Default delivery address")
 
     # Viral acquisition
     referral_code = models.CharField(max_length=8, unique=True, editable=False)

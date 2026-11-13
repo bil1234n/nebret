@@ -1,17 +1,9 @@
 """Shared fixtures for the test-suite."""
-from datetime import datetime, time, timedelta
+from decimal import Decimal
 
-from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.travel.models import AircraftType, Airport, BaggageOption, FareClass, Flight, TravelPackage
-
-LAYOUT = [
-    {"cabin": "BUSINESS", "rows": [1, 2], "letters": "AC|DF"},
-    {"cabin": "ECONOMY", "rows": [10, 14], "letters": "ABC|DEF", "extra_legroom_rows": [10],
-     "extra_legroom_surcharge": 1500, "window_surcharge": 300, "aisle_surcharge": 200},
-]
 
 _counter = {"n": 0}
 
@@ -28,40 +20,32 @@ def client_for(user):
     return c
 
 
-def make_flight(days_ahead=40, economy_seats=20):
-    add, _ = Airport.objects.get_or_create(iata="ADD", defaults=dict(name="Bole", city="Addis Ababa", country="Ethiopia"))
-    dxb, _ = Airport.objects.get_or_create(iata="DXB", defaults=dict(name="DXB", city="Dubai", country="UAE"))
-    ac, _ = AircraftType.objects.get_or_create(code="T1", defaults=dict(name="Test 737", layout=LAYOUT))
-    dep = datetime.combine(timezone.localdate() + timedelta(days=days_ahead), time(9), tzinfo=timezone.get_current_timezone())
-    f = Flight.objects.create(flight_number=f"ET{600 + Flight.objects.count()}", origin=add, destination=dxb,
-                              departure_time=dep, arrival_time=dep + timedelta(hours=4), aircraft=ac)
-    f.generate_seats()
-    eco = FareClass.objects.create(flight=f, cabin="ECONOMY", code="K", name="Economy Saver", base_fare=18000,
-                                   taxes=3200, seats_allocated=economy_seats)
-    bus = FareClass.objects.create(flight=f, cabin="BUSINESS", code="J", name="Business", base_fare=52000,
-                                   taxes=3200, seats_allocated=8, refundable=True)
-    return f, eco, bus
+def make_category(name="Apartments", group="HOMES", **kw):
+    from apps.market.models import Category
+
+    return Category.objects.get_or_create(name=name, defaults={"group": group, **kw})[0]
 
 
-def make_package(price=185000, capacity=10):
-    today = timezone.localdate()
-    return TravelPackage.objects.create(
-        name="Umrah Test", category="UMRAH", destination_city="Makkah", destination_country="Saudi Arabia",
-        summary="Test", duration_days=15, price=price, departure_date=today + timedelta(days=60),
-        return_date=today + timedelta(days=75), capacity=capacity)
+def make_company(name="Sunshine Real Estate", kind="REAL_ESTATE", **kw):
+    from apps.agencies.models import Agency
+
+    return Agency.objects.create(name=name, kind=kind, phone="+251911000000", **kw)
 
 
-def make_bag():
-    return BaggageOption.objects.get_or_create(code="BAG23", defaults=dict(name="Extra 23kg", weight_kg=23, price=3900))[0]
+def make_listing(price=Decimal("3000000"), units=3, company=None, category=None, **kw):
+    """A live listing with ``units`` units in stock. Every payment plan is on by default."""
+    from apps.market.models import Listing
 
-
-def passenger(seat=None, **kw):
-    data = {"first_name": "Abebe", "last_name": "Kebede", "gender": "M", "date_of_birth": "1990-01-01",
-            "passport_number": "EP1234567", "passport_expiry": "2030-01-01"}
-    if seat:
-        data["seat"] = seat
-    data.update(kw)
-    return data
+    defaults = dict(title="3 bedroom apartment, Bole", summary="145 m², 4th floor", price=price,
+                    allow_full_payment=True, allow_reservation=True, reservation_fee=Decimal("50000"),
+                    reservation_days=14, allow_installments=True, min_down_payment_percent=Decimal("30"),
+                    max_installment_months=24, finance_rate_percent=Decimal("0"), allow_equb_payout=True,
+                    specs={"bedrooms": 3, "area_m2": 145})
+    defaults.update(kw)
+    listing = Listing.objects.create(category=category or make_category(), company=company, **defaults)
+    if units:
+        listing.add_units(units)
+    return listing
 
 
 RULE_FIELDS = ("service_fee_percent", "late_fee", "grace_days", "require_paid_to_draw", "payout_basis",
@@ -90,7 +74,6 @@ def plenty_of_money():
     Patch for tests about who can win (pools, selection, groups) rather than about money: pretend the Equb holds
     enough for 99 winners. The money rule itself is tested separately.
     """
-    from decimal import Decimal
     from unittest import mock
 
     def fake(group, rnd=None):

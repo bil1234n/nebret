@@ -21,7 +21,8 @@ class PaymentTransaction(TimeStampedModel):
         MOBILE = "mobile", "Mobile money (manual)"
 
     class Purpose(models.TextChoices):
-        BOOKING = "BOOKING", "Flight / package booking"
+        ORDER = "ORDER", "Marketplace order (full payment / deposit)"
+        INSTALLMENT = "INSTALLMENT", "Marketplace installment"
         EQUB_CONTRIBUTION = "EQUB_CONTRIBUTION", "Equb contribution"
         DONATION = "DONATION", "Crowdfunding donation (Sadaqah / Hibah)"
         MICRO_DONATION = "MICRO_DONATION", "Old lucky-draw entry (retired)"
@@ -46,7 +47,7 @@ class PaymentTransaction(TimeStampedModel):
     currency = models.CharField(max_length=3, default="ETB")
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.INITIATED, db_index=True)
 
-    # What is being paid for (Booking, Contribution, MicroDonation…)
+    # What is being paid for (Order, Installment, Contribution, Donation…)
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
     object_id = models.PositiveBigIntegerField()
     target = GenericForeignKey("content_type", "object_id")
@@ -64,13 +65,13 @@ class PaymentTransaction(TimeStampedModel):
                                     related_name="+", help_text="Staff member who recorded an office payment")
     refunded_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
-    # Travel agency sales: the agency keeps the rest, Vacation Equb keeps ``platform_fee``.
+    # Partner-company sales: the company keeps the rest, Nebret Equb keeps ``platform_fee``.
     agency = models.ForeignKey("agencies.Agency", null=True, blank=True, on_delete=models.PROTECT,
-                               related_name="payments", help_text="Travel agency this sale belongs to")
+                               related_name="payments", help_text="Partner company this sale belongs to")
     platform_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0,
-                                       help_text="Vacation Equb's commission on an agency sale")
+                                       help_text="Nebret Equb's commission on a company sale")
     split_settled = models.BooleanField(default=False,
-                                        help_text="Chapa paid the agency's share directly (split payment)")
+                                        help_text="Chapa paid the company's share directly (split payment)")
 
     class Meta:
         ordering = ["-created_at"]

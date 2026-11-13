@@ -1,7 +1,7 @@
 """
 Periodic housekeeping. Run every minute from cron / systemd timer / Kubernetes CronJob:
 
-    * * * * *  cd /srv/vacation/backend && python manage.py run_scheduler
+    * * * * *  cd /srv/nebret/backend && python manage.py run_scheduler
 
 (or with ``--loop`` as a long-running worker container).
 """
@@ -14,8 +14,9 @@ from apps.core.exceptions import BusinessRuleError
 
 
 class Command(BaseCommand):
-    help = ("Send calendar (scheduled) Equb payments, expire seat holds & unpaid bookings, send departure reminders, flag late Equb contributions, send Equb "
-            "reminders and standing notices, run due draws.")
+    help = ("Expire unpaid marketplace orders and stale unit holds, add installment late fees and reminders, send "
+            "calendar (scheduled) Equb payments, flag late Equb contributions, send Equb reminders and standing notices, "
+            "run due draws.")
 
     def add_arguments(self, parser):
         parser.add_argument("--loop", action="store_true", help="Run forever, every --interval seconds")
@@ -30,23 +31,18 @@ class Command(BaseCommand):
             time.sleep(opts["interval"])
 
     def tick(self, run_draws=True):
-        from apps.equb.models import EqubRound, EqubSettings
+        from apps.equb.models import EqubGroup, EqubMembership, EqubRound, EqubSettings
         from apps.equb.operations import escalate_standings, send_due_reminders
-        from apps.equb.services import run_draw, sweep_late_contributions
+        from apps.equb.scheduled import dispatch_due as send_scheduled_payments
+        from apps.equb.services import (close_payment_round, expire_pending_payments, is_draw_round, reopen_if_short,
+                                        run_draw, sweep_late_contributions)
         from apps.luckydraw.services import run_schedule as community_schedule
-        from apps.travel.services.bookings import expire_unpaid_bookings
-        from apps.travel.services.operations import send_trip_reminders
-        from apps.travel.services.seats import expire_stale_holds
+        from apps.market.services.orders import expire_unpaid_orders, sweep_installments
 
         rules = EqubSettings.load()
-        out = {"bookings_expired": expire_unpaid_bookings(), "holds_released": expire_stale_holds(),
-               "trip_reminders": send_trip_reminders(), "late_contributions": sweep_late_contributions()}
-        from apps.equb.scheduled import dispatch_due as send_scheduled_payments
-
-        from apps.equb.services import expire_pending_payments
-
-        from apps.equb.models import EqubGroup
-        from apps.equb.services import reopen_if_short
+        out = {"orders_expired": expire_unpaid_orders()}
+        out.update({f"installments_{k}": v for k, v in sweep_installments().items()})
+        out["late_contributions"] = sweep_late_contributions()
 
         for g in EqubGroup.objects.filter(status=EqubGroup.Status.COMPLETED):
             reopen_if_short(g)  # finished early, or while members were still waiting to win
@@ -57,9 +53,6 @@ class Command(BaseCommand):
                    flagged_for_termination=escalation["flagged"], equb_draws=0, giveaways_drawn=0)
         now = timezone.now()
         # Payment-only rounds (everyone has won) close on their draw day whatever the draw type.
-        from apps.equb.models import EqubMembership
-        from apps.equb.services import close_payment_round, is_draw_round
-
         out["payment_rounds_closed"] = 0
         for rnd in EqubRound.objects.filter(status="COLLECTING", draw_date__lte=timezone.localdate()).select_related("group"):
             if rnd.group.current_round != rnd.number:
@@ -72,7 +65,7 @@ class Command(BaseCommand):
                 out["payment_rounds_closed"] += 1
         if run_draws:
             for rnd in EqubRound.objects.filter(status="COLLECTING", draw_date__lte=timezone.localdate(),
-                                                  group__draw_type="AUTOMATIC"):
+                                                group__draw_type="AUTOMATIC"):
                 try:
                     run_draw(rnd)
                     out["equb_draws"] += 1

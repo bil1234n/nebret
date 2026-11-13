@@ -11,8 +11,9 @@ class StaffInline(admin.TabularInline):
 
 @admin.register(Agency)
 class AgencyAdmin(admin.ModelAdmin):
-    list_display = ["name", "phone", "status", "commission_percent", "chapa_subaccount_id", "created_at"]
-    list_filter = ["status"]
+    list_display = ["name", "kind", "phone", "status", "is_verified", "commission_percent", "chapa_subaccount_id",
+                    "created_at"]
+    list_filter = ["status", "kind", "is_verified"]
     search_fields = ["name", "phone", "license_number"]
     inlines = [StaffInline]
 
@@ -35,4 +36,4 @@ class FamilyMemberAdmin(admin.ModelAdmin):
 class AgencyLedgerEntryAdmin(admin.ModelAdmin):
     list_display = ["created_at", "agency", "kind", "gross_amount", "commission", "agency_amount", "payout_status"]
     list_filter = ["agency", "kind", "payout_status"]
-    raw_id_fields = ["booking", "payment", "customer", "paid_by"]
+    raw_id_fields = ["order", "payment", "customer", "paid_by"]

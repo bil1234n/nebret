@@ -65,7 +65,7 @@
       <div class="card-h"><h2>Payout</h2>{{ payout.status|status_badge }}</div>
       <dl class="kv"><dt>Round</dt><dd>R{{ payout.round.number }} · {{ payout.created_at|date:"d M Y" }}</dd><dt>Amount</dt><dd>{{ payout.amount|money }} <span class="small muted">(gross {{ payout.gross_amount|money }}, fee {{ payout.fee_amount|money }})</span></dd>
         <dt>Voucher</dt><dd class="mono">{{ payout.voucher_code }}</dd>
-        {% if payout.booking %}<dt>Used on</dt><dd><a href="{% url 'console:booking' payout.booking.reference %}">{{ payout.booking.reference }}</a></dd>{% endif %}
+        {% if payout.order %}<dt>Used on</dt><dd><a href="{% url 'console:order' payout.order.reference %}">{{ payout.order.reference }}</a> · {{ payout.order.listing.title }}</dd>{% endif %}
         {% if payout.paid_out_at %}<dt>Paid out</dt><dd>{{ payout.paid_out_at|date:"d M Y" }} · {{ payout.paid_out_method }} {{ payout.paid_out_reference }}</dd>{% endif %}</dl>
       {% if payout.status == 'ISSUED' %}<button class="btn ghost sm" style="margin-top:12px" data-open="payout-dialog">Mark paid out (cash/bank)</button>{% endif %}
     </div>{% endif %}
@@ -174,7 +174,7 @@
 {% if payout and payout.status == 'ISSUED' %}
 <dialog class="modal" id="payout-dialog"><form method="post">{% csrf_token %}<input type="hidden" name="action" value="paid_out">
   <div class="modal-h"><h3>Pay out {{ payout.amount|money }}</h3><button type="button" class="x" data-close>&times;</button></div>
-  <div class="modal-b"><p class="small muted" style="margin-top:0">Use this when the winner takes the payout as money instead of a booking credit.</p>
+  <div class="modal-b"><p class="small muted" style="margin-top:0">Use this when the winner takes the payout as money instead of spending it in the marketplace.</p>
     <div class="field"><label>Paid by</label><select name="method"><option>Cash</option><option>Bank transfer</option><option>telebirr</option></select></div>
     <div class="field"><label>Reference</label><input type="text" name="reference" maxlength="64"></div></div>
   <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn">Mark paid out</button></div>

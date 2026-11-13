@@ -4,18 +4,18 @@
 {% block actions %}
 <a class="btn ghost" href="{% url 'agency:family_add' c.pk %}">+ Family member</a>
 <a class="btn ghost" href="{% url 'agency:equbs' %}?customer={{ c.pk }}">Join an Equb</a>
-<a class="btn" href="{% url 'agency:book' %}?customer={{ c.pk }}">Book a ticket</a>
+<a class="btn" href="{% url 'agency:sell' %}?customer={{ c.pk }}">New sale</a>
 {% endblock %}
 {% block content %}
 <div class="grid g-21">
   <div class="card">
     <div class="card-h"><h2>Family</h2><a class="btn ghost sm" href="{% url 'agency:family_add' c.pk %}">+ Add</a></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Relation</th><th>Born</th><th>Passport</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Relation</th><th>Born</th><th>National ID</th><th></th></tr></thead><tbody>
     {% for fm in family %}<tr><td class="strong">{{ fm.full_name }}{% if fm.phone %}<div class="small muted">{{ fm.phone }}</div>{% endif %}</td><td>{{ fm.get_relation_display }}</td>
-      <td class="small">{{ fm.date_of_birth|date:"d M Y" }}</td><td class="mono small">{{ fm.passport_number|default:"—" }}{% if fm.passport_expiry %}<div class="muted">exp. {{ fm.passport_expiry|date:"M Y" }}</div>{% endif %}</td>
+      <td class="small">{{ fm.date_of_birth|date:"d M Y" }}</td><td class="mono small">{{ fm.national_id|default:"—" }}</td>
       <td class="r" style="white-space:nowrap"><a class="btn ghost xs" href="{% url 'agency:family_edit' c.pk fm.pk %}">Edit</a>
         <form method="post" style="display:inline" data-confirm="Remove {{ fm.full_name }} from the family?">{% csrf_token %}<input type="hidden" name="action" value="remove_family"><input type="hidden" name="member" value="{{ fm.pk }}"><button class="btn ghost xs">Remove</button></form></td></tr>
-    {% empty %}<tr><td colspan="5" class="empty">No family members yet. Add them to book them on trips or give them an Equb place.</td></tr>{% endfor %}</tbody></table></div>
+    {% empty %}<tr><td colspan="5" class="empty">No family members yet. Add them as co-buyers or give them an Equb place.</td></tr>{% endfor %}</tbody></table></div>
   </div>
   <div class="card">
     <div class="card-h"><h2>Customer</h2></div>
@@ -38,11 +38,11 @@
       <td>{{ m.status|status_badge }}{% if m.has_won %} 🏆{% endif %}</td><td class="r num">{{ m.total_paid|money }}</td></tr>
     {% empty %}<tr><td colspan="5" class="empty">Not in any Equb yet.</td></tr>{% endfor %}</tbody></table></div>
   </div>
-  <div class="card"><div class="card-h"><h2>Trips</h2><a class="btn ghost sm" href="{% url 'agency:book' %}?customer={{ c.pk }}">+ Book</a></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Trip</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>
-    {% for b in trips %}<tr><td><a class="mono strong" href="{% url 'agency:booking' b.reference %}">{{ b.reference }}</a></td><td>{{ b.destination_label }}<div class="small muted">{{ b.departure_at|date:"d M Y" }}</div></td>
-      <td>{{ b.status|status_badge }}</td><td class="r num">{{ b.total_amount|money }}</td></tr>
-    {% empty %}<tr><td colspan="4" class="empty">No trips yet.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="card"><div class="card-h"><h2>Purchases</h2><a class="btn ghost sm" href="{% url 'agency:sell' %}?customer={{ c.pk }}">+ New sale</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Item</th><th>Status</th><th class="r">Paid</th><th class="r">Total</th></tr></thead><tbody>
+    {% for o in purchases %}<tr><td><a class="mono strong" href="{% url 'agency:order' o.reference %}">{{ o.reference }}</a></td><td>{{ o.title }}<div class="small muted">{{ o.get_plan_display }}</div></td>
+      <td>{{ o.status|status_badge:o.get_status_display }}</td><td class="r num">{{ o.amount_paid|money }}</td><td class="r num">{{ o.total_amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No purchases yet.</td></tr>{% endfor %}</tbody></table></div>
   </div>
 </div>
 {% endblock %}

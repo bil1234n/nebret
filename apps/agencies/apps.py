@@ -4,13 +4,13 @@ from django.apps import AppConfig
 class AgenciesConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.agencies"
-    verbose_name = "Travel agencies"
+    verbose_name = "Partner companies"
 
     def ready(self):
         from django.db.models.signals import post_save
 
-        from apps.travel.models import Booking
+        from apps.market.models import Order
 
-        from .services import on_booking_saved
+        from .services import on_order_saved
 
-        post_save.connect(on_booking_saved, sender=Booking, dispatch_uid="agency_credit_sale")
+        post_save.connect(on_order_saved, sender=Order, dispatch_uid="company_credit_sale")

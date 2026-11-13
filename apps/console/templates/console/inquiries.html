@@ -1,0 +1,22 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Inquiries{% endblock %}{% block heading %}Inquiries{% endblock %}{% block crumbs %}Questions, site visits and test-drive requests from the app{% endblock %}
+{% block content %}
+<div class="chips" style="margin-bottom:12px">
+  <a class="chip {% if not status %}on{% endif %}" href="?status=">All</a>
+  {% for v, l in statuses %}<a class="chip {% if status == v %}on{% endif %}" href="?status={{ v }}">{{ l }}</a>{% endfor %}
+</div>
+{% for i in page %}
+<div class="card mt">
+  <div class="card-h"><h2>{{ i.get_kind_display }} · <a href="{% url 'console:listing' i.listing_id %}">{{ i.listing.title }}</a></h2>{{ i.status|status_badge:i.get_status_display }}</div>
+  <p style="margin-top:0">{{ i.message|linebreaksbr }}</p>
+  <div class="small muted"><a href="{% url 'console:user' i.user_id %}">{{ i.user.full_name }}</a> · {{ i.phone|default:i.user.phone|tel }} · {{ i.created_at|date:"d M Y, H:i" }}{% if i.preferred_date %} · prefers {{ i.preferred_date|date:"D d M" }}{% endif %}
+    · seller: {% if i.listing.company %}{{ i.listing.company.name }}{% else %}Nebret Equb{% endif %}</div>
+  {% if i.reply %}<div class="note-box mt"><b>Reply:</b> {{ i.reply|linebreaksbr }}</div>{% endif %}
+  {% if i.status != 'CLOSED' %}
+  <form method="post" class="toolbar mt" style="margin-bottom:0">{% csrf_token %}<input type="hidden" name="inquiry" value="{{ i.pk }}">
+    <input class="grow" type="text" name="reply" placeholder="Write a reply – the customer gets it in the app">
+    <button class="btn sm">Send reply</button><button class="btn ghost sm" name="action" value="close">Close</button></form>{% endif %}
+</div>
+{% empty %}<div class="card"><div class="empty">No inquiries here.</div></div>{% endfor %}
+{% include "console/_pagination.html" %}
+{% endblock %}

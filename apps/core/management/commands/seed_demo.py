@@ -1,186 +1,226 @@
-"""Load realistic demo data: airports, aircraft, flights with seat maps, packages, Equbs, crowdfunding and giveaways."""
-from datetime import date, datetime, time, timedelta
+"""
+Load realistic demo data: marketplace categories, partner companies (real estate, cars, e-bikes, electronics, land),
+listings with stock and payment plans, property Equbs, a crowdfunding campaign and a giveaway.
+
+    python manage.py seed_demo
+
+Safe to run more than once (it updates what is already there).
+"""
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-B738 = [
-    {"cabin": "BUSINESS", "rows": [1, 4], "letters": "AC|DF"},
-    {"cabin": "ECONOMY", "rows": [10, 32], "letters": "ABC|DEF", "exit_rows": [16, 17],
-     "extra_legroom_rows": [10, 16, 17], "extra_legroom_surcharge": 1500, "window_surcharge": 350, "aisle_surcharge": 250},
-]
-B788 = [
-    {"cabin": "BUSINESS", "rows": [1, 6], "letters": "AC|DG|HK"},
-    {"cabin": "ECONOMY", "rows": [10, 40], "letters": "ABC|DEFG|HJK", "exit_rows": [20],
-     "extra_legroom_rows": [10, 20], "extra_legroom_surcharge": 2500, "window_surcharge": 500, "aisle_surcharge": 400},
+CATEGORIES = [
+    # group, name, Amharic, icon, spec fields
+    ("VEHICLES", "Cars", "መኪናዎች", "car-sport", [
+        {"key": "mileage_km", "label": "Mileage", "unit": "km"}, {"key": "fuel", "label": "Fuel"},
+        {"key": "transmission", "label": "Transmission"}, {"key": "engine", "label": "Engine"},
+        {"key": "seats", "label": "Seats"}, {"key": "colour", "label": "Colour"}]),
+    ("VEHICLES", "Trucks & commercial", "የጭነት መኪናዎች", "bus", [
+        {"key": "capacity_t", "label": "Load capacity", "unit": "t"}, {"key": "fuel", "label": "Fuel"},
+        {"key": "mileage_km", "label": "Mileage", "unit": "km"}]),
+    ("HOMES", "Apartments", "አፓርትመንቶች", "business", [
+        {"key": "bedrooms", "label": "Bedrooms"}, {"key": "bathrooms", "label": "Bathrooms"},
+        {"key": "area_m2", "label": "Area", "unit": "m²"}, {"key": "floor", "label": "Floor"},
+        {"key": "parking", "label": "Parking"}, {"key": "completion", "label": "Completion"}]),
+    ("HOMES", "Houses & villas", "ቤቶች እና ቪላዎች", "home", [
+        {"key": "bedrooms", "label": "Bedrooms"}, {"key": "bathrooms", "label": "Bathrooms"},
+        {"key": "plot_m2", "label": "Plot", "unit": "m²"}, {"key": "built_m2", "label": "Built area", "unit": "m²"}]),
+    ("LAND", "Residential plots", "የመኖሪያ ቦታ", "map", [
+        {"key": "plot_m2", "label": "Plot size", "unit": "m²"}, {"key": "title_deed", "label": "Title deed"},
+        {"key": "road_access", "label": "Road access"}]),
+    ("LAND", "Shops & offices", "ሱቆች እና ቢሮዎች", "storefront", [
+        {"key": "area_m2", "label": "Area", "unit": "m²"}, {"key": "floor", "label": "Floor"},
+        {"key": "use", "label": "Use"}]),
+    ("ELECTRONICS", "E-bikes & motorbikes", "ኤሌክትሪክ ብስክሌቶች", "bicycle", [
+        {"key": "range_km", "label": "Range", "unit": "km"}, {"key": "battery", "label": "Battery"},
+        {"key": "top_speed_kmh", "label": "Top speed", "unit": "km/h"}, {"key": "charge_h", "label": "Charging",
+                                                                         "unit": "h"}]),
+    ("ELECTRONICS", "Phones, TVs & appliances", "ስልኮች እና የቤት እቃዎች", "tv", [
+        {"key": "brand", "label": "Brand"}, {"key": "storage", "label": "Storage"},
+        {"key": "screen", "label": "Screen"}, {"key": "warranty", "label": "Warranty"}]),
 ]
 
-ROUTES = [
-    # number, origin, dest, dep hour, minutes, aircraft, economy, business, taxes
-    ("ET600", "ADD", "DXB", 9, 245, "B738", 18500, 52000, 3200),
-    ("ET602", "ADD", "DXB", 22, 245, "B788", 17800, 49500, 3200),
-    ("ET412", "ADD", "JED", 8, 150, "B738", 16900, 45000, 2900),
-    ("ET424", "ADD", "MED", 14, 170, "B788", 17500, 46500, 2900),
-    ("ET684", "ADD", "CAN", 23, 600, "B788", 48500, 128000, 5400),
-    ("ET604", "ADD", "PEK", 1, 660, "B788", 51000, 135000, 5400),
-    ("ET690", "ADD", "IST", 7, 330, "B738", 31000, 82000, 4100),
-    ("ET106", "ADD", "DIR", 6, 55, "B738", 4200, 9800, 450),
+COMPANIES = [
+    # name, kind, phone, owner name, owner phone, city, description
+    ("Sunshine Real Estate", "REAL_ESTATE", "+251116610000", "Abel Tesfaye", "0911000101", "Addis Ababa",
+     "Developer of modern apartment blocks in Bole, CMC and Ayat since 2008."),
+    ("Moenco Motors", "CAR_DEALER", "+251115510000", "Hana Girma", "0911000102", "Addis Ababa",
+     "Authorised dealer for new Toyota and Suzuki vehicles, with service and genuine parts."),
+    ("Green Wheel E-Mobility", "EBIKE", "+251116620000", "Dawit Alemu", "0911000103", "Addis Ababa",
+     "Electric bikes and scooters for commuters and delivery riders, assembled in Ethiopia."),
+    ("Bole Home Electronics", "ELECTRONICS", "+251116630000", "Sara Mekonnen", "0911000104", "Addis Ababa",
+     "Phones, TVs, fridges and washing machines with official warranty."),
+    ("Legetafo Land Partners", "LAND", "+251116640000", "Yonas Bekele", "0911000105", "Legetafo",
+     "Serviced residential plots with title deeds just outside Addis Ababa."),
 ]
+
+IMG = "https://images.unsplash.com/photo-{}?w=1200&q=70"
+
+LISTINGS = [
+    # company index, category, title, brand, model, year, condition, city, area, price, units, specs, features, image,
+    # plans: (full, reserve_fee, installments(months, down%, rate), equb), delivery fee, handover days, warranty
+    (0, "Apartments", "3 bedroom apartment, Bole Atlas", "Sunshine", "Atlas Residence", 2026, "OFF_PLAN",
+     "Addis Ababa", "Bole", 7800000, 12, {"bedrooms": 3, "bathrooms": 2, "area_m2": 145, "floor": "2–12",
+                                           "parking": "1 space", "completion": "Q4 2027"},
+     ["Elevator", "Backup generator", "24/7 security", "Underground parking"], "1545324418-cc1a3fa10c00",
+     (True, 100000, (36, 30, 0), True), 0, 30, 0),
+    (0, "Apartments", "2 bedroom apartment, CMC", "Sunshine", "CMC Gardens", 2025, "NEW", "Addis Ababa", "CMC",
+     5200000, 8, {"bedrooms": 2, "bathrooms": 2, "area_m2": 98, "floor": "3–9", "parking": "Shared"},
+     ["Elevator", "Children's playground", "Water reservoir"], "1502672260266-1c1ef2d93688",
+     (True, 75000, (24, 35, 0), True), 0, 14, 0),
+    (0, "Houses & villas", "4 bedroom G+1 villa, Ayat", "Sunshine", "Ayat Villas", 2025, "NEW", "Addis Ababa", "Ayat",
+     18500000, 3, {"bedrooms": 4, "bathrooms": 3, "plot_m2": 250, "built_m2": 320},
+     ["Private garden", "Servant quarter", "2 car garage"], "1568605114967-8130f3a36994",
+     (True, 250000, (48, 40, 6), True), 0, 30, 0),
+    (1, "Cars", "Toyota Corolla Cross Hybrid", "Toyota", "Corolla Cross", 2026, "NEW", "Addis Ababa", "Kazanchis",
+     4650000, 6, {"mileage_km": 0, "fuel": "Hybrid", "transmission": "Automatic", "engine": "1.8 L", "seats": 5,
+                  "colour": "Pearl white"},
+     ["Reverse camera", "Lane assist", "3 years free service"], "1621007947382-bb3c3994e3fb",
+     (True, 50000, (24, 40, 8), True), 15000, 7, 36),
+    (1, "Cars", "Suzuki Dzire 1.2 AT", "Suzuki", "Dzire", 2026, "NEW", "Addis Ababa", "Kazanchis", 2350000, 10,
+     {"mileage_km": 0, "fuel": "Petrol", "transmission": "Automatic", "engine": "1.2 L", "seats": 5,
+      "colour": "Silver"}, ["Air conditioning", "Touchscreen", "Fuel efficient"], "1549317661-bd32c8ce0db2",
+     (True, 30000, (18, 35, 8), True), 10000, 5, 24),
+    (1, "Trucks & commercial", "Isuzu NPR 5-ton truck", "Isuzu", "NPR", 2025, "NEW", "Addis Ababa", "Kality",
+     6900000, 4, {"capacity_t": 5, "fuel": "Diesel", "mileage_km": 0}, ["Power steering", "Cargo box option"],
+     "1601584115197-04ecc0da31d7", (True, 100000, (24, 40, 10), True), 0, 10, 24),
+    (2, "E-bikes & motorbikes", "Green Wheel Commuter e-bike", "Green Wheel", "Commuter 48V", 2026, "NEW",
+     "Addis Ababa", "Megenagna", 68000, 40, {"range_km": 70, "battery": "48V 20Ah lithium", "top_speed_kmh": 35,
+                                              "charge_h": 5},
+     ["Removable battery", "Disc brakes", "LED lights"], "1571068316344-75bc76f77890",
+     (True, 5000, (12, 20, 0), True), 1500, 3, 12),
+    (2, "E-bikes & motorbikes", "Cargo e-scooter for delivery", "Green Wheel", "Cargo Pro", 2026, "NEW",
+     "Addis Ababa", "Megenagna", 145000, 15, {"range_km": 90, "battery": "60V 32Ah lithium", "top_speed_kmh": 45,
+                                              "charge_h": 6},
+     ["Rear cargo box", "Phone holder", "Anti-theft alarm"], "1558981403-c5f9899a28bc",
+     (True, 10000, (12, 25, 0), True), 2000, 3, 12),
+    (3, "Phones, TVs & appliances", "Samsung Galaxy A56 5G 256GB", "Samsung", "Galaxy A56", 2026, "NEW",
+     "Addis Ababa", "Bole", 52000, 30, {"brand": "Samsung", "storage": "256 GB", "screen": "6.7 inch",
+                                         "warranty": "1 year"},
+     ["Official warranty", "Free screen protector"], "1610945265064-0e34e5519bbf", (True, 0, (6, 30, 0), True), 0, 1, 12),
+    (3, "Phones, TVs & appliances", "LG 65\" 4K Smart TV", "LG", "UR8050", 2025, "NEW", "Addis Ababa", "Bole",
+     98000, 12, {"brand": "LG", "screen": "65 inch 4K", "warranty": "2 years"}, ["Wall mount included", "Free delivery"],
+     "1593359677879-a4bb92f829d1", (True, 0, (10, 30, 0), True), 0, 2, 24),
+    (4, "Residential plots", "300 m² residential plot, Legetafo", "Legetafo Land", "Phase 2", None, "NEW", "Legetafo",
+     "Phase 2", 3600000, 20, {"plot_m2": 300, "title_deed": "Yes – lease", "road_access": "Asphalt, 200 m"},
+     ["Water & power to the plot", "Fenced compound"], "1500382017468-9049fed747ef",
+     (True, 60000, (24, 30, 0), True), 0, 21, 0),
+    (0, "Shops & offices", "Ground-floor shop, Bole Atlas", "Sunshine", "Atlas Residence", 2026, "OFF_PLAN",
+     "Addis Ababa", "Bole", 9500000, 4, {"area_m2": 80, "floor": "Ground", "use": "Retail"},
+     ["Street front", "Shared parking"], "1497366216548-37526070297c", (True, 150000, (36, 40, 6), True), 0, 30, 0),
+]
+
+
+def _summary(category, specs: dict) -> str:
+    """ "3 Bedrooms · 145 m² Area" – the first facts of the listing, in the order its category shows them."""
+    parts = []
+    for f in category.spec_fields or []:
+        v = specs.get(f.get("key"))
+        if v in (None, "", 0):
+            continue
+        unit = f.get("unit", "")
+        parts.append(f"{v} {unit}".strip() if unit else (f"{v} {f['label'].lower()}" if isinstance(v, (int, float)) else str(v)))
+        if len(parts) == 3:
+            break
+    return " · ".join(parts) or category.name
 
 
 class Command(BaseCommand):
     help = "Seed demo data for local development and app demos"
 
-    def add_arguments(self, parser):
-        parser.add_argument("--days", type=int, default=21, help="How many days of flights to create")
-
     @transaction.atomic
     def handle(self, *args, **opts):
         from apps.accounts.models import User
+        from apps.agencies.models import Agency, AgencyStaff
+        from apps.agencies.services import add_staff
         from apps.equb.models import EqubGroup, EqubPackage
         from apps.equb.services import join_group
         from apps.luckydraw.models import CrowdfundingCampaign, Giveaway
-        from apps.travel.models import AircraftType, Airport, BaggageOption, FareClass, Flight, TravelPackage
+        from apps.market.models import Category, Listing, ListingImage
 
-        airports = {
-            "ADD": ("Addis Ababa Bole International", "Addis Ababa", "Ethiopia", "Africa/Addis_Ababa"),
-            "DIR": ("Aba Tenna Dejazmach Yilma", "Dire Dawa", "Ethiopia", "Africa/Addis_Ababa"),
-            "DXB": ("Dubai International", "Dubai", "United Arab Emirates", "Asia/Dubai"),
-            "JED": ("King Abdulaziz International", "Jeddah", "Saudi Arabia", "Asia/Riyadh"),
-            "MED": ("Prince Mohammad bin Abdulaziz", "Madinah", "Saudi Arabia", "Asia/Riyadh"),
-            "CAN": ("Guangzhou Baiyun International", "Guangzhou", "China", "Asia/Shanghai"),
-            "PEK": ("Beijing Capital International", "Beijing", "China", "Asia/Shanghai"),
-            "IST": ("Istanbul Airport", "Istanbul", "Türkiye", "Europe/Istanbul"),
-        }
-        ap = {}
-        for iata, (name, city, country, tz) in airports.items():
-            ap[iata], _ = Airport.objects.update_or_create(iata=iata, defaults=dict(name=name, city=city, country=country, timezone=tz))
-        ac = {
-            "B738": AircraftType.objects.update_or_create(code="B738", defaults={"name": "Boeing 737-800", "layout": B738})[0],
-            "B788": AircraftType.objects.update_or_create(code="B788", defaults={"name": "Boeing 787-8 Dreamliner", "layout": B788})[0],
-        }
-        for code, name, kg, price, intl in [("BAG10", "Extra bag 10 kg", 10, 1800, False), ("BAG23", "Extra bag 23 kg", 23, 3900, True),
-                                            ("BAG32", "Heavy bag 32 kg", 32, 5600, True), ("ZAMZAM", "Zamzam water 10 L", 10, 900, True)]:
-            BaggageOption.objects.update_or_create(code=code, defaults=dict(name=name, weight_kg=kg, price=price, international_only=intl))
+        now, today = timezone.now(), timezone.localdate()
 
-        tz = timezone.get_current_timezone()
-        today = timezone.localdate()
-        flights = 0
-        for d in range(1, opts["days"] + 1):
-            day = today + timedelta(days=d)
-            for number, o, dst, hour, mins, craft, eco, bus, tax in ROUTES:
-                dep = datetime.combine(day, time(hour, 0), tzinfo=tz)
-                f, created = Flight.objects.get_or_create(
-                    flight_number=number, departure_time=dep,
-                    defaults=dict(origin=ap[o], destination=ap[dst], arrival_time=dep + timedelta(minutes=mins),
-                                  aircraft=ac[craft], is_international=dst not in ("DIR",), terminal="2"))
-                if created:
-                    f.generate_seats()
-                    eco_seats = f.seats.filter(cabin="ECONOMY").count()
-                    bus_seats = f.seats.filter(cabin="BUSINESS").count()
-                    FareClass.objects.create(flight=f, cabin="ECONOMY", code="K", name="Economy Saver", base_fare=eco,
-                                             taxes=tax, seats_allocated=eco_seats // 2, checked_baggage_kg=23, change_fee=2500)
-                    FareClass.objects.create(flight=f, cabin="ECONOMY", code="Y", name="Economy Flex", base_fare=int(eco * 1.35),
-                                             taxes=tax, seats_allocated=eco_seats - eco_seats // 2, refundable=True,
-                                             change_fee=1500, checked_baggage_kg=46, free_seat_selection=True)
-                    FareClass.objects.create(flight=f, cabin="BUSINESS", code="J", name="Cloud Nine Business", base_fare=bus,
-                                             taxes=tax, seats_allocated=bus_seats, refundable=True, checked_baggage_kg=64,
-                                             cabin_baggage_kg=14, free_seat_selection=True)
-                    flights += 1
+        admin = User.objects.filter(phone="+251900000000").first()
+        if not admin:
+            admin = User.objects.create_superuser("+251900000000", "admin12345", full_name="Nebret Admin")
+        customer = User.objects.filter(phone="+251911223344").first()
+        if not customer:
+            customer = User.objects.create_user("0911223344", "demo12345", full_name="Meron Tadesse",
+                                                email="meron@example.com", city="Addis Ababa")
 
-        packages = [
-            ("Umrah Economy – 15 Days", "UMRAH", "Makkah & Madinah", "Saudi Arabia", 15, 185000, 30, ["Umrah visa", "Return flight ADD–JED", "4★ hotel near Haram", "Ziyarah tours", "Airport transfers"], "Swissôtel Al Maqam", 4, 25, True),
-            ("Hajj Premium 1448", "HAJJ", "Makkah", "Saudi Arabia", 21, 640000, 120, ["Hajj visa", "Return flights", "5★ Makkah hotel", "Mina & Arafat tents", "Scholar guidance"], "Fairmont Makkah", 5, 40, True),
-            ("Dubai Business Explorer", "DUBAI", "Dubai", "United Arab Emirates", 6, 78000, 12, ["Visa", "Return flight", "Deira hotel", "Dragon Mart & Gold Souk tours"], "Hyatt Regency Deira", 4, 20, True),
-            ("Guangzhou Canton Fair Trade Tour", "CHINA", "Guangzhou", "China", 10, 215000, 60, ["Business visa", "Return flight ADD–CAN", "Canton Fair badge", "Interpreter", "Factory visits"], "Shangri-La Guangzhou", 5, 25, True),
-            ("Istanbul Shopping & Heritage", "TURKEY", "Istanbul", "Türkiye", 7, 96000, 30, ["E-visa", "Return flight", "Old city hotel", "Grand Bazaar tour"], "Sultanahmet Palace", 4, 20, False),
-        ]
-        pk_objs = {}
-        for name, cat, city, country, days, price, start, includes, hotel, stars, cap, feat in packages:
-            pk_objs[cat], _ = TravelPackage.objects.update_or_create(name=name, defaults=dict(
-                category=cat, destination_city=city, destination_country=country, duration_days=days, price=price,
-                deposit_amount=Decimal(price) * Decimal("0.2"), departure_date=today + timedelta(days=start),
-                return_date=today + timedelta(days=start + days), capacity=cap, includes=includes, hotel_name=hotel,
-                hotel_stars=stars, is_featured=feat,
-                summary=f"{days} days in {city} – {', '.join(includes[:3])}."))
+        cats = {}
+        for i, (group, name, am, icon, fields) in enumerate(CATEGORIES):
+            cats[name], _ = Category.objects.update_or_create(
+                name=name, defaults=dict(group=group, name_am=am, icon=icon, spec_fields=fields, sort_order=i))
 
-        admin, _ = User.objects.get_or_create(phone="+251900000000", defaults={"full_name": "Vacation Equb Admin", "is_staff": True, "is_superuser": True})
-        admin.set_password("admin12345")
-        admin.save()
-        demo, _ = User.objects.get_or_create(phone="+251911223344", defaults={"full_name": "Abebe Kebede", "email": "abebe@example.com"})
-        demo.set_password("demo12345")
-        demo.save()
-        members = [demo]
-        for i, name in enumerate(["Hana Tesfaye", "Mohammed Ali", "Selam Girma", "Yusuf Ahmed", "Meron Alemu",
-                                  "Kedir Hassen", "Tigist Bekele", "Ibrahim Omar", "Liya Haile"], start=1):
-            u, _ = User.objects.get_or_create(phone=f"+25191100{i:04d}", defaults={"full_name": name})
-            u.set_password("demo12345")
-            u.save()
-            members.append(u)
+        companies = []
+        for name, kind, phone, owner, owner_phone, city, desc in COMPANIES:
+            c, created = Agency.objects.update_or_create(
+                name=name, defaults=dict(kind=kind, phone=phone, city=city, description=desc, is_verified=True,
+                                         status=Agency.Status.ACTIVE, created_by=admin))
+            if not AgencyStaff.objects.filter(agency=c, role=AgencyStaff.Role.OWNER).exists():
+                add_staff(c, full_name=owner, phone=owner_phone, password="company123", role=AgencyStaff.Role.OWNER)
+            companies.append(c)
 
-        equbs = [
-            ("Umrah 1448 Family Equb", "UMRAH", pk_objs["UMRAH"], 15500, "MONTHLY", 12, "Save monthly together; each month one member is drawn and travels on a fully-funded Umrah."),
-            ("Hajj Savers Circle", "HAJJ", pk_objs["HAJJ"], 32000, "MONTHLY", 20, "A 20-month circle for Hajj. Winners get their full Hajj package funded."),
-            ("Dubai Traders Weekly", "DUBAI", pk_objs["DUBAI"], 6500, "WEEKLY", 12, "Weekly Equb for Dubai business trips – winner gets flights, visa and hotel."),
-            ("Guangzhou Import Equb", "CHINA", pk_objs["CHINA"], 18000, "BIWEEKLY", 12, "For importers heading to the Canton Fair."),
-        ]
-        dest_names = {"HAJJ": "Hajj", "UMRAH": "Umrah", "DUBAI": "Dubai", "CHINA": "China trade"}
-        for name, dest, pkg, amount, freq, size, desc in equbs:
-            # Equb package (template) → group created from it → members
-            equb_pkg, _ = EqubPackage.objects.get_or_create(name=f"{dest_names[dest]} Equb Package", defaults=dict(
-                terms_content="Winners must travel within 12 months of their draw.\nPayouts can't be transferred."))
-            g, created = EqubGroup.objects.get_or_create(name=name, defaults=dict(
-                **equb_pkg.group_defaults(), equb_package=equb_pkg, contribution_amount=amount,
-                frequency_days={"WEEKLY": 7, "BIWEEKLY": 14}.get(freq, 30),
-                start_date=today + timedelta(days=7), max_members=size,
-                duration_value=size * (2 if freq == "BIWEEKLY" else 1), duration_unit="MONTHS" if freq == "MONTHLY" else "WEEKS",
-                draw_type="AUTOMATIC", organizer=admin))
+        made = 0
+        for (ci, cat, title, brand, model, year, cond, city, area, price, units, specs, features, img, plans,
+             delivery_fee, handover, warranty) in LISTINGS:
+            full, reserve_fee, (months, down, rate), equb = plans
+            listing, created = Listing.objects.update_or_create(
+                title=title, company=companies[ci], defaults=dict(
+                    category=cats[cat], brand=brand, model_name=model, year=year, condition=cond, city=city, area=area,
+                    summary=_summary(cats[cat], specs), price=Decimal(price),
+                    description=f"{title} from {companies[ci].name}. " + " · ".join(features),
+                    specs=specs, features=features, image_url=IMG.format(img), allow_full_payment=full,
+                    allow_reservation=bool(reserve_fee), reservation_fee=Decimal(reserve_fee), reservation_days=14,
+                    allow_installments=bool(months), max_installment_months=months or 1,
+                    min_down_payment_percent=Decimal(down), finance_rate_percent=Decimal(rate),
+                    allow_equb_payout=equb, delivery_available=bool(delivery_fee), delivery_fee=Decimal(delivery_fee),
+                    handover_days=handover, warranty_months=warranty, status=Listing.Status.ACTIVE,
+                    is_featured=made < 6, created_by=admin))
             if created:
-                for u in members[: min(len(members), size - 2)]:
-                    join_group(u, g)
+                listing.add_units(units)
+                ListingImage.objects.create(listing=listing, image_url=IMG.format(img), sort_order=0)
+            made += 1
 
-        # A Group Equb: the demo customer's family saving together in an open Equb, with a child who has no phone.
-        from apps.equb.models import GroupEqub
-        from apps.equb.teams import create_group_equb
+        package, _ = EqubPackage.objects.get_or_create(
+            name="Property Equb", defaults={"terms_content": (
+                "# Property Equb agreement\n## How it works\n1. Every member pays the same amount every round.\n"
+                "2. Each round's fair draw decides who receives the payout first – everyone receives it once.\n"
+                "3. The payout can be spent on any listing in the Nebret marketplace, or taken in cash.\n"
+                "!! Nobody can lose money: the draw only decides the order.")})
+        equbs = [
+            ("E-bike Equb · 12 weeks", Decimal("6000"), 12, "WEEKS", 12),
+            ("Car Equb · 24 months", Decimal("100000"), 24, "MONTHS", 24),
+            ("Apartment Equb · 36 months", Decimal("250000"), 36, "MONTHS", 36),
+        ]
+        for name, amount, value, unit, members in equbs:
+            g, created = EqubGroup.objects.get_or_create(name=name, defaults=dict(
+                equb_package=package, contribution_amount=amount, duration_value=value, duration_unit=unit,
+                max_members=members, start_date=today + timedelta(days=7), status=EqubGroup.Status.OPEN,
+                draw_type=EqubGroup.DrawType.AUTOMATIC, rules_text=package.terms_content))
+            if created:
+                join_group(customer, g, notify_member=False)
 
-        if not GroupEqub.objects.filter(owner=demo).exists():
-            fam_equb, made = EqubGroup.objects.get_or_create(name="Umrah Family Savers", defaults=dict(
-                equb_package=EqubPackage.objects.get(name="Umrah Equb Package"), contribution_amount=Decimal("5000"),
-                frequency_days=30, duration_value=10, duration_unit="MONTHS", max_members=10,
-                start_date=today + timedelta(days=14), draw_type="MANUAL", organizer=admin))
-            if fam_equb.status == "OPEN":
-                create_group_equb(demo, fam_equb, name="Kebede Family", kind="FAMILY",
-                                  description="Our family saves together so everyone can go to Umrah.",
-                                  members=[m for m in members[1:3] if not fam_equb.memberships.filter(user=m).exists()],
-                                  dependents=[{"name": "Liya Abebe"}], created_by=admin)
-
-        now = timezone.now()
-        # Community Finance & Impact: Sadaqah crowdfunding (fee added on top) and free, sponsored giveaways.
-        CrowdfundingCampaign.objects.get_or_create(title="Help Ummi Fatuma reach Umrah", defaults=dict(
-            category="UMRAH", beneficiary_name="Fatuma Ali (72), Addis Ababa", goal_amount=Decimal("185000"),
-            story="Ummi Fatuma has served tea at our neighbourhood masjid for 30 years and has always dreamed of "
-                  "Umrah. Your Sadaqah goes 100% to her Umrah package – Vacation Equb's 5% platform fee is shown separately.",
-            starts_at=now - timedelta(days=3), is_featured=True, created_by=admin))
-        CrowdfundingCampaign.objects.get_or_create(title="Hajj fund for our Imam", defaults=dict(
-            category="HAJJ", beneficiary_name="Imam Abdulkadir, Dessie", goal_amount=Decimal("650000"),
-            story="The community of Dessie is gathering Hibah so our Imam can perform Hajj this year.",
-            starts_at=now - timedelta(days=1), created_by=admin))
-        Giveaway.objects.get_or_create(title="Umrah Giveaway", defaults=dict(
-            description="One Umrah Economy package, fully paid by Vacation Equb. Entry is free – invite 10 friends who "
-                        "register on Vacation Equb and you get an entry.",
-            sponsor_type="COMPANY", sponsor_name="Vacation Equb", sponsor_note="Paid from Vacation Equb's marketing budget.",
-            prize_type="TRAVEL_PACKAGE", prize_title="Umrah Economy package for one", prize_value=Decimal("185000"),
-            prize_package=pk_objs["UMRAH"], number_of_winners=1, starts_at=now - timedelta(days=1),
-            ends_at=now + timedelta(days=21), draw_at=now + timedelta(days=21, hours=1), is_featured=True))
-        Giveaway.objects.get_or_create(title="Dubai Weekend Giveaway", defaults=dict(
-            description="Three winners get 25,000 ETB flight credit to Dubai, sponsored by our partner.",
-            sponsor_type="CORPORATE", sponsor_name="Habesha Trade PLC", sponsor_note="100% sponsored by Habesha Trade PLC.",
-            prize_type="TRAVEL_CREDIT", prize_title="25,000 ETB flight credit", prize_value=Decimal("25000"),
-            number_of_winners=3, starts_at=now - timedelta(hours=2), ends_at=now + timedelta(days=10),
-            draw_at=now + timedelta(days=10, hours=1)))
+        CrowdfundingCampaign.objects.get_or_create(title="A new home for the Abebe family", defaults=dict(
+            category=CrowdfundingCampaign.Category.HOME, beneficiary_name="Abebe family",
+            story="The family lost their home in a fire. Your gift helps them pay the down payment on a small apartment.",
+            goal_amount=Decimal("1500000"), image_url=IMG.format("1560518883-ce09059eeffa"), is_featured=True,
+            created_by=admin))
+        ebike = Listing.objects.filter(title="Green Wheel Commuter e-bike").first()
+        Giveaway.objects.get_or_create(title="Win a Green Wheel e-bike", defaults=dict(
+            description="Invite 10 friends who register with your code to earn a free entry. Paid by Nebret Equb.",
+            prize_type=Giveaway.PrizeType.LISTING, prize_title="Green Wheel Commuter e-bike",
+            prize_value=Decimal("68000"), prize_listing=ebike, number_of_winners=1, starts_at=now,
+            ends_at=now + timedelta(days=30), draw_at=now + timedelta(days=31), is_featured=True,
+            image_url=IMG.format("1571068316344-75bc76f77890")))
 
         self.stdout.write(self.style.SUCCESS(
-            f"Seeded {flights} new flights, {len(packages)} packages, {len(equbs)} Equbs, 2 crowdfunding campaigns, 2 giveaways.\n"
-            "Admin login: +251900000000 / admin12345   Demo user: +251911223344 / demo12345"))
+            f"Demo data ready: {len(cats)} categories, {len(companies)} companies, {made} listings, {len(equbs)} Equbs.\n"
+            "  Admin:    +251900000000 / admin12345  (console: /console/)\n"
+            "  Customer: 0911223344 / demo12345     (mobile app)\n"
+            "  Company:  0911000101 / company123    (company portal: /company/ – Sunshine Real Estate)"))

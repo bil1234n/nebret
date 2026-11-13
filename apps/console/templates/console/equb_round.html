@@ -92,7 +92,7 @@
       <label class="draw-method"><input type="radio" name="method" value="random" {% if pool.eligible_count %}checked{% else %}disabled{% endif %}>
         <span><b>Random draw</b><span class="small muted">Provably fair: the result comes from the seed committed before the draw. {{ pool.eligible_count }} member{{ pool.eligible_count|pluralize }} in the draw, {{ pool.odds_percent }}% chance each.</span></span></label>
       <label class="draw-method"><input type="radio" name="method" value="select" {% if not pool.eligible_count %}checked{% endif %}>
-        <span><b>Select the winner{{ to_pick|pluralize }}</b><span class="small muted">You choose who wins this round – e.g. the member who needs to travel first. Members are told the winner as usual.</span></span></label>
+        <span><b>Select the winner{{ to_pick|pluralize }}</b><span class="small muted">You choose who wins this round – e.g. the member whose home or car purchase is due first. Members are told the winner as usual.</span></span></label>
     </div>
     <div data-select-panel hidden>
       <div class="small strong" style="margin:14px 0 6px">Tick {{ to_pick }} member{{ to_pick|pluralize }}</div>
@@ -102,7 +102,7 @@
           {% if e.eligible %}<span class="badge b-green">In the draw</span>{% else %}<span class="badge b-grey">Left out</span>{% endif %}</label>{% endfor %}
       </div>
       {% if pool.excluded_count %}<label class="check-row" style="margin-top:10px"><input type="checkbox" name="include_ineligible" value="1" data-include-inel> Also allow members who are left out of this draw</label>{% endif %}
-      <div class="field" style="margin-top:10px"><label>Reason <span class="small muted">(required when choosing someone left out)</span></label><input type="text" name="note" maxlength="250" placeholder="e.g. Travels first for medical reasons, agreed by the group"></div>
+      <div class="field" style="margin-top:10px"><label>Reason <span class="small muted">(required when choosing someone left out)</span></label><input type="text" name="note" maxlength="250" placeholder="e.g. Handover of their apartment is due first, agreed by the group"></div>
     </div>
   </div>
   <div class="modal-f"><button type="button" class="btn ghost" data-close>Cancel</button><button class="btn gold" data-confirm-draw>Confirm draw</button></div>

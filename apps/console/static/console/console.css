@@ -1,4 +1,4 @@
-/* Vacation Equb staff console — white surfaces, professional dark green */
+/* Nebret Equb staff console — white surfaces, professional dark green */
 :root {
   --green: #0F382B; --green-2: #1B4D3E; --green-3: #3E8E6C; --green-soft: #E7F0EC; --green-tint: #F3F8F5;
   --gold: #C9A227; --gold-soft: #FBF5E1; --bg: #F6F9F7; --card: #FFFFFF; --line: #E1EAE5;
@@ -305,7 +305,7 @@ dialog.modal::backdrop { background: rgba(13,31,24,.45); }
 .t td.num, .t td.r.num { white-space: nowrap; }
 .t td .small.muted, .t td .muted { white-space: normal; }
 
-/* travel operations */
+/* order & handover desks */
 .nowrap { white-space: nowrap; }
 .gold-text { color: #8A6D0B; }
 .desk-search { display: flex; gap: 10px; }

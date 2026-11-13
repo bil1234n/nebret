@@ -9,9 +9,10 @@ register = template.Library()
 
 TONES = {
     "green": {"CONFIRMED", "SUCCESS", "PAID", "ACTIVE", "DRAWN", "LIVE", "ISSUED", "WON", "SCHEDULED", "AVAILABLE", "REDEEMED",
-              "OPEN", "PAID_OUT", "COMPLETED", "BOARDED"},
-    "gold": {"PENDING_PAYMENT", "PENDING", "COLLECTING", "INITIATED", "CLOSED", "LOCKED", "WAIVED", "CHECKED_IN", "UPCOMING"},
-    "red": {"FAILED", "CANCELLED", "LATE", "DEFAULTED", "EXPIRED", "VOID", "REFUNDED"},
+              "OPEN", "PAID_OUT", "COMPLETED", "INSTALLMENTS", "ANSWERED", "SOLD"},
+    "gold": {"PENDING_PAYMENT", "PENDING", "COLLECTING", "INITIATED", "CLOSED", "HELD", "WAIVED", "RESERVED", "UPCOMING",
+             "DRAFT", "SOLD_OUT"},
+    "red": {"FAILED", "CANCELLED", "LATE", "DEFAULTED", "EXPIRED", "VOID", "REFUNDED", "BLOCKED", "SUSPENDED", "ARCHIVED"},
 }
 LABELS = {"DEFAULTED": "Terminated", "WAIVED": "From credit", "PAID_OUT": "Paid out", "WON": "Won"}
 
@@ -73,7 +74,8 @@ def qs(context, **kwargs):
     return "?" + params.urlencode() if params else "?"
 
 
-PURPOSE_SHORT = {"BOOKING": "Booking", "EQUB_CONTRIBUTION": "Equb contribution", "MICRO_DONATION": "Old lucky-draw entry", "DONATION": "Crowdfunding gift"}
+PURPOSE_SHORT = {"ORDER": "Order", "INSTALLMENT": "Installment", "EQUB_CONTRIBUTION": "Equb contribution",
+                 "MICRO_DONATION": "Old lucky-draw entry", "DONATION": "Crowdfunding gift"}
 
 
 @register.filter

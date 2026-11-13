@@ -1,0 +1,30 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Orders{% endblock %}{% block heading %}Orders{% endblock %}
+{% block crumbs %}{{ totals.n }} order{{ totals.n|pluralize }} · {{ totals.value|default:0|money }} · {{ totals.paid|default:0|money }} paid{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% qs export='csv' page=None %}">Export CSV</a><a class="btn" href="{% url 'console:sell' %}">+ New order</a>{% endblock %}
+{% block content %}
+<div class="chips" style="margin-bottom:12px">
+  {% for k, l in queues %}<a class="chip {% if queue == k %}on{% endif %}" href="{% qs queue=k page=None %}">{{ l }}{% if k != 'all' %} <b>{{ counts|get_item:k }}</b>{% endif %}</a>{% endfor %}
+</div>
+<form class="toolbar" method="get"><input type="hidden" name="queue" value="{{ queue }}">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Reference, customer, phone, listing, unit code or ID…">
+  <select name="group"><option value="">All categories</option>{% for v, l in groups %}<option value="{{ v }}" {% if group == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="company"><option value="">All sellers</option><option value="nebret" {% if company == 'nebret' %}selected{% endif %}>Nebret Equb</option>{% for c in companies %}<option value="{{ c.pk }}" {% if company == c.pk|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <select name="plan"><option value="">All plans</option>{% for v, l in plans %}<option value="{{ v }}" {% if plan == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="status"><option value="">All statuses</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <input type="date" name="from" value="{{ from }}" title="Created from"><input type="date" name="to" value="{{ to }}" title="Created to">
+  <button class="btn" type="submit">Filter</button>
+</form>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Ref</th><th>Customer</th><th>Item</th><th>Seller</th><th>Plan</th><th>Status</th><th class="r">Paid</th><th class="r">Balance</th></tr></thead>
+  <tbody>{% for o in page %}<tr>
+    <td><a class="mono strong" href="{% url 'console:order' o.reference %}">{{ o.reference }}</a><div class="small muted">{{ o.created_at|date:"d M Y" }}</div></td>
+    <td><a href="{% url 'console:user' o.user_id %}">{{ o.user.full_name }}</a><div class="small muted mono">{{ o.user.phone }}</div></td>
+    <td>{{ o.listing.title|truncatechars:34 }}<div class="small muted">{{ o.listing.category.name }}{% if o.unit %} · <span class="mono">{{ o.unit.code }}</span>{% endif %}</div></td>
+    <td class="small">{% if o.company %}<a href="{% url 'console:agency' o.company_id %}">{{ o.company.name }}</a>{% else %}Nebret Equb{% endif %}</td>
+    <td class="small">{{ o.get_plan_display }}{% if o.installment_months %}<div class="muted">{{ o.installment_months }} months</div>{% endif %}</td>
+    <td>{{ o.status|status_badge:o.get_status_display }}{% if o.status == 'PENDING_PAYMENT' and o.expires_at %}<div class="small muted">until {{ o.expires_at|date:"d M H:i" }}</div>{% endif %}</td>
+    <td class="r num">{{ o.amount_paid|money }}<div class="small muted">{{ o.progress_percent }}%</div></td><td class="r num strong">{{ o.balance_due|money }}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No orders found.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

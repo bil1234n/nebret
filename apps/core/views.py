@@ -28,22 +28,24 @@ class DashboardView(APIView):
         from apps.equb.serializers import EqubGroupListSerializer
         from apps.luckydraw.models import CrowdfundingCampaign, Giveaway
         from apps.luckydraw.serializers import CrowdfundingCampaignSerializer, GiveawaySerializer
-        from apps.travel.models import Booking, Flight, TravelPackage
-        from apps.travel.serializers import BookingListSerializer, FlightListSerializer, TravelPackageSerializer
+        from apps.market.models import Category, Listing, ListingUnit, Order
+        from apps.market.serializers import CategorySerializer, ListingListSerializer, OrderListSerializer
+        from django.db.models import Count, Q
 
-        now = timezone.now()
         ctx = {"request": request}
+        if request.user.is_authenticated:
+            ctx["saved_ids"] = set(request.user.saved_listings.values_list("listing_id", flat=True))
+        live = (Listing.objects.live().select_related("category", "company").prefetch_related("images")
+                .annotate(_available=Count("units", filter=Q(units__status=ListingUnit.Status.AVAILABLE))))
         data = {
-            "featured_packages": TravelPackageSerializer(
-                TravelPackage.objects.filter(is_active=True, is_featured=True)[:6], many=True, context=ctx
-            ).data,
-            "upcoming_flights": FlightListSerializer(
-                Flight.objects.filter(departure_time__gt=now, status=Flight.Status.SCHEDULED)
-                .select_related("origin", "destination")
-                .order_by("departure_time")[:5],
-                many=True,
-                context=ctx,
-            ).data,
+            "categories": CategorySerializer(
+                Category.objects.filter(is_active=True).annotate(
+                    listing_count=Count("listings", filter=Q(listings__status=Listing.Status.ACTIVE))),
+                many=True, context=ctx).data,
+            "featured_listings": ListingListSerializer(live.filter(is_featured=True)[:8], many=True, context=ctx).data,
+            "installment_deals": ListingListSerializer(
+                live.filter(allow_installments=True).order_by("-created_at")[:8], many=True, context=ctx).data,
+            "new_listings": ListingListSerializer(live.order_by("-created_at")[:8], many=True, context=ctx).data,
             "open_equbs": EqubGroupListSerializer(
                 EqubGroup.objects.filter(status=EqubGroup.Status.OPEN)[:5], many=True, context=ctx
             ).data,
@@ -57,13 +59,10 @@ class DashboardView(APIView):
         }
         user = request.user
         if user.is_authenticated:
-            from django.db.models import DateTimeField, F
-            from django.db.models.functions import Cast, Coalesce
-
             from apps.equb import standing as standing_mod
             from apps.equb.models import EqubMembership
             from apps.equb.serializers import MembershipSerializer
-            from apps.travel.views import trip_tabs
+            from apps.market.views import order_tabs
 
             data["user"] = {
                 "full_name": user.full_name,
@@ -71,17 +70,13 @@ class DashboardView(APIView):
                 "live_entries": user.giveaway_progress.filter(giveaway__status="LIVE").aggregate(s=Sum("entries"))["s"] or 0,
                 "friends_invited": user.referrals.filter(is_active=True).count(),
             }
-            mine = Booking.objects.filter(user=user).select_related("flight__origin", "flight__destination", "package")
-            tabs = trip_tabs()
-            data["my_upcoming_bookings"] = BookingListSerializer(
-                mine.filter(tabs["upcoming"]).annotate(
-                    dep=Coalesce(F("flight__departure_time"), Cast("package__departure_date", DateTimeField()))
-                ).order_by("dep")[:3],
-                many=True,
-                context=ctx,
-            ).data
-            data["my_pending_bookings"] = BookingListSerializer(
-                mine.filter(tabs["pending"]).order_by("expires_at")[:3], many=True, context=ctx).data
+            mine = Order.objects.filter(user=user).select_related("listing__category", "unit", "company")
+            tabs = order_tabs()
+            data["my_active_orders"] = OrderListSerializer(
+                mine.filter(tabs["active"]).order_by("-updated_at")[:3], many=True, context=ctx).data
+            data["my_pending_orders"] = OrderListSerializer(
+                mine.filter(tabs["to_pay"]).order_by("expires_at")[:3], many=True, context=ctx).data
+            data["saved_count"] = len(ctx["saved_ids"])
             # Live Equb places with standing, most urgent first (owing money, then the soonest due date).
             places = list(EqubMembership.objects.filter(user=user, status__in=EqubMembership.LIVE_STATUSES,
                                                         group__status__in=[EqubGroup.Status.OPEN, EqubGroup.Status.ACTIVE])
@@ -95,7 +90,7 @@ class DashboardView(APIView):
 
 
 LANDING_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Vacation Equb API</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Nebret Equb API</title>
 <style>
 :root{--g:#0F382B;--g2:#1B4D3E;--soft:#E7F0EC;--line:#E1EAE5;--muted:#5B6F66}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#0D1F18}
@@ -110,19 +105,19 @@ a.card:hover{border-color:var(--g)}a.card.primary{background:#C9A227;border-colo
 code{background:var(--soft);color:var(--g);padding:2px 6px;border-radius:6px;font-size:13px}
 section{padding:0 24px 40px}section h2{font-size:17px}td{padding:6px 12px 6px 0;font-size:14px}
 </style></head><body>
-<header><div class="wrap"><small>ቬኬሽን ዕቁብ · Vacation Equb</small><h1>Backend is running</h1>
-<p>Flights &amp; packages · Travel Equb · Sadaqah crowdfunding · free giveaways</p>
-<div class="status"><span class="dot"></span>Database connected · {flights} flights · {equbs} Equbs · {draws} live campaigns</div></div></header>
+<header><div class="wrap"><small>ንብረት ዕቁብ · Nebret Equb</small><h1>Backend is running</h1>
+<p>Cars · Houses &amp; apartments · Land · E-bikes · Property Equb · Installments · Crowdfunding</p>
+<div class="status"><span class="dot"></span>Database connected · {listings} live listings · {companies} companies · {equbs} Equbs</div></div></header>
 <div class="wrap"><div class="grid">
-<a class="card primary" href="/console/"><b>Staff console →</b><span>Dashboard, charts, bookings, Equbs, draws</span></a>
+<a class="card primary" href="/console/"><b>Staff console →</b><span>Dashboard, orders, installments, Equbs, draws</span></a>
+<a class="card" href="/company/"><b>Company portal →</b><span>For real-estate, car and e-bike partners</span></a>
 <a class="card" href="/api/docs/"><b>API documentation →</b><span>Try every endpoint in Swagger UI</span></a>
-<a class="card" href="/admin/"><b>Data admin →</b><span>Raw records: flights, fares, users</span></a>
-<a class="card" href="/api/travel/flights/?origin=ADD&amp;destination=DXB"><b>Flight search →</b><span>Addis Ababa → Dubai, live fares</span></a>
-<a class="card" href="/api/equb/groups/"><b>Equb pools →</b><span>Destination savings circles</span></a>
-<a class="card" href="/api/community/crowdfunding/"><b>Crowdfunding →</b><span>Sadaqah / Hibah campaigns for travellers</span></a>
-<a class="card" href="/api/community/giveaways/"><b>Giveaways →</b><span>Free sponsored trips – 10 referrals = 1 entry</span></a>
+<a class="card" href="/api/market/listings/"><b>Marketplace →</b><span>Cars, homes, plots and e-bikes for sale</span></a>
+<a class="card" href="/api/market/categories/"><b>Categories →</b><span>Vehicles · Homes · Land · Electronics</span></a>
+<a class="card" href="/api/equb/groups/"><b>Equb circles →</b><span>Save together for your car or home</span></a>
+<a class="card" href="/api/community/crowdfunding/"><b>Crowdfunding →</b><span>Sadaqah / Hibah campaigns</span></a>
 <a class="card" href="/privacy/"><b>Privacy policy →</b><span>What we collect and how to delete it</span></a>
-<a class="card" href="/account/delete/"><b>Delete my account →</b><span>Ask us to delete your Vacation Equb account</span></a>
+<a class="card" href="/account/delete/"><b>Delete my account →</b><span>Ask us to delete your Nebret Equb account</span></a>
 </div></div>
 {demo}
 </body></html>"""
@@ -140,13 +135,14 @@ class LandingView(View):
         from django.conf import settings
 
         from apps.equb.models import EqubGroup
-        from apps.luckydraw.models import CrowdfundingCampaign, Giveaway
-        from apps.travel.models import Flight
+        from apps.agencies.models import Agency
+        from apps.market.models import Listing
 
         local = request.get_host().split(":")[0] in {"localhost", "127.0.0.1", "10.0.2.2"}
-        html = (LANDING_HTML.replace("{demo}", DEMO_LOGINS_HTML if settings.DEBUG and local else "").replace("{flights}", str(Flight.objects.filter(departure_time__gt=timezone.now()).count()))
-                .replace("{equbs}", str(EqubGroup.objects.count()))
-                .replace("{draws}", str(CrowdfundingCampaign.objects.live().count() + Giveaway.objects.live().count())))
+        html = (LANDING_HTML.replace("{demo}", DEMO_LOGINS_HTML if settings.DEBUG and local else "")
+                .replace("{listings}", str(Listing.objects.live().count()))
+                .replace("{companies}", str(Agency.objects.filter(status=Agency.Status.ACTIVE).count()))
+                .replace("{equbs}", str(EqubGroup.objects.count())))
         return HttpResponse(html)
 
 

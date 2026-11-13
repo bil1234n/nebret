@@ -1,13 +1,13 @@
 {% extends "console/base.html" %}{% load console_tags %}
 {% block title %}{{ a.name }}{% endblock %}{% block heading %}{{ a.name }}{% endblock %}
-{% block crumbs %}<a href="{% url 'console:agencies' %}">Travel agencies</a> / {{ a.get_status_display }}{% endblock %}
-{% block actions %}<a class="btn ghost" href="{% url 'console:agency_edit' a.pk %}">Edit</a>{% endblock %}
+{% block crumbs %}<a href="{% url 'console:agencies' %}">Partner companies</a> / {{ a.get_kind_display }} · {{ a.get_status_display }}{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:listing_add' %}">+ Listing</a><a class="btn ghost" href="{% url 'console:agency_edit' a.pk %}">Edit</a>{% endblock %}
 {% block content %}
 <div class="grid g-4">
-  <div class="card kpi dark"><div class="label">Sales</div><div class="value">{{ total.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ total.sales }} sale{{ total.sales|pluralize }}</div></div>
+  <div class="card kpi dark"><div class="label">Sales</div><div class="value">{{ total.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ total.sales }} payment{{ total.sales|pluralize }}</div></div>
   <div class="card kpi gold"><div class="label">Our commission ({{ a.commission_percent|floatformat:"-2" }}%)</div><div class="value">{{ total.commission|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">&nbsp;</div></div>
-  <div class="card kpi"><div class="label">Agency's share</div><div class="value">{{ total.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">&nbsp;</div></div>
-  <div class="card kpi"><div class="label">Owed to agency</div><div class="value {% if total.owed %}red{% endif %}">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ n_customers }} customer{{ n_customers|pluralize }}</div></div>
+  <div class="card kpi"><div class="label">Company's share</div><div class="value">{{ total.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">&nbsp;</div></div>
+  <div class="card kpi"><div class="label">Owed to company</div><div class="value {% if total.owed %}red{% endif %}">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ n_customers }} customer{{ n_customers|pluralize }}</div></div>
 </div>
 
 <div class="grid g-2 mt">
@@ -18,12 +18,13 @@
     {% if not a.chapa_subaccount_id %}
       {% if a.bank_code and a.account_number and a.account_name %}
       <form method="post" style="margin-top:12px" data-confirm="Register {{ a.account_name }} · {{ a.account_number }} with Chapa? Chapa will then send {{ a.name }} its share of every online sale automatically.">{% csrf_token %}<input type="hidden" name="action" value="subaccount"><button class="btn">Create Chapa subaccount</button></form>
-      {% else %}<p class="small muted">Add the agency's bank, account holder and account number (<a href="{% url 'console:agency_edit' a.pk %}">Edit</a>), then create the subaccount.</p>{% endif %}
-      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to Vacation Equb and the agency's share shows as owed below.</p>
-    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for Vacation Equb and settles the rest to this account.</p>{% endif %}
+      {% else %}<p class="small muted">Add the company's bank, account holder and account number (<a href="{% url 'console:agency_edit' a.pk %}">Edit</a>), then create the subaccount.</p>{% endif %}
+      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to Nebret Equb and the company's share shows as owed below.</p>
+    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for Nebret Equb and settles the rest to this account.</p>{% endif %}
   </div>
-  <div class="card"><div class="card-h"><h2>Agency</h2>{{ a.status|status_badge:a.get_status_display }}</div>
-    <dl class="kv"><dt>Phone</dt><dd>{{ a.phone }}</dd><dt>Email</dt><dd>{{ a.email|default:"—" }}</dd><dt>Address</dt><dd>{{ a.address|default:"—" }}, {{ a.city }}</dd>
+  <div class="card"><div class="card-h"><h2>Company</h2>{{ a.status|status_badge:a.get_status_display }}</div>
+    <dl class="kv"><dt>Business</dt><dd>{{ a.get_kind_display }}{% if a.is_verified %} <span class="badge b-green">Verified</span>{% endif %}</dd>
+      <dt>Phone</dt><dd>{{ a.phone }}</dd><dt>Email</dt><dd>{{ a.email|default:"—" }}</dd><dt>Address</dt><dd>{{ a.address|default:"—" }}, {{ a.city }}</dd>
       <dt>Licence · TIN</dt><dd>{{ a.license_number|default:"—" }} · {{ a.tin|default:"—" }}</dd><dt>Joined</dt><dd>{{ a.created_at|date:"d M Y" }}</dd></dl>
     <form method="post" class="toolbar" style="margin:12px 0 0">{% csrf_token %}<input type="hidden" name="action" value="status">
       <select name="status">{% for v, l in statuses %}<option value="{{ v }}" {% if a.status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
@@ -32,11 +33,22 @@
   </div>
 </div>
 
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Listings</h2><a class="small" href="{% url 'console:listings' %}?company={{ a.pk }}">All →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Listing</th><th class="r">Price</th><th>Status</th></tr></thead><tbody>
+    {% for l in listings %}<tr><td><a class="strong" href="{% url 'console:listing' l.pk %}">{{ l.title }}</a><div class="small muted">{{ l.category.name }}</div></td><td class="r num">{{ l.price|money }}</td><td>{{ l.status|status_badge:l.get_status_display }}</td></tr>
+    {% empty %}<tr><td colspan="3" class="empty">No listings yet.</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h2>Orders</h2><a class="small" href="{% url 'console:orders' %}?company={{ a.pk }}">All →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Status</th><th class="r">Paid</th></tr></thead><tbody>
+    {% for o in orders %}<tr><td><a class="mono strong" href="{% url 'console:order' o.reference %}">{{ o.reference }}</a><div class="small muted">{{ o.listing.title|truncatechars:26 }}</div></td><td>{{ o.user.full_name }}</td><td>{{ o.status|status_badge:o.get_status_display }}</td><td class="r num">{{ o.amount_paid|money }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="empty">No orders yet.</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
 <form method="post" class="card mt" data-confirm="Mark the ticked sales as paid to {{ a.name }}?">{% csrf_token %}<input type="hidden" name="action" value="mark_paid">
   <div class="card-h"><h2>To pay out</h2><span>{{ total.owed|money }} owed</span></div>
-  <div class="table-wrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Customer</th><th>Sale</th><th class="r">Amount</th><th class="r">Commission</th><th class="r">Agency share</th></tr></thead><tbody>
+  <div class="table-wrap"><table class="t"><thead><tr><th></th><th>Date</th><th>Customer</th><th>Order</th><th class="r">Amount</th><th class="r">Commission</th><th class="r">Company share</th></tr></thead><tbody>
   {% for e in owed %}<tr><td><input type="checkbox" name="entries" value="{{ e.pk }}" checked></td><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.customer.full_name }}</td>
-    <td>{% if e.booking %}<a class="mono" href="{% url 'console:booking' e.booking.reference %}">{{ e.booking.reference }}</a>{% endif %}<div class="small muted">{{ e.get_kind_display }}</div></td>
+    <td>{% if e.order %}<a class="mono" href="{% url 'console:order' e.order.reference %}">{{ e.order.reference }}</a>{% endif %}<div class="small muted">{{ e.get_kind_display }}</div></td>
     <td class="r num">{{ e.gross_amount|money }}</td><td class="r num">{{ e.commission|money }}</td><td class="r num strong">{{ e.agency_amount|money }}</td></tr>
   {% empty %}<tr><td colspan="7" class="empty">Nothing owed – all settled.</td></tr>{% endfor %}</tbody></table></div>
   {% if owed %}<div class="toolbar" style="margin:12px 0 0"><input class="grow" type="text" name="reference" maxlength="64" placeholder="Bank transfer reference"><button class="btn">Mark ticked as paid</button></div>{% endif %}
@@ -44,8 +56,8 @@
 
 <div class="grid g-21 mt">
   <div class="card"><div class="card-h"><h2>All sales</h2></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Customer</th><th>Sale</th><th class="r">Amount</th><th class="r">Commission</th><th>Payout</th></tr></thead><tbody>
-    {% for e in ledger %}<tr><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.customer.full_name }}</td><td class="mono small">{{ e.booking.reference|default:"" }}</td>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Customer</th><th>Order</th><th class="r">Amount</th><th class="r">Commission</th><th>Payout</th></tr></thead><tbody>
+    {% for e in ledger %}<tr><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.customer.full_name }}</td><td class="mono small">{{ e.order.reference|default:"" }}</td>
       <td class="r num">{{ e.gross_amount|money }}</td><td class="r num">{{ e.commission|money }}</td><td>{% include "agencies/_payout.html" with s=e.payout_status label=e.get_payout_status_display %}</td></tr>
     {% empty %}<tr><td colspan="6" class="empty">No sales yet.</td></tr>{% endfor %}</tbody></table></div></div>
   <div>

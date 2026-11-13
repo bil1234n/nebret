@@ -1,42 +1,50 @@
-"""Forms for the agency portal and for managing agencies in the Vacation Equb console."""
+"""Forms for the company portal and for managing partner companies in the Nebret Equb console."""
 from __future__ import annotations
+
+import json
 
 from django import forms
 from django.utils import timezone
 
 from apps.console.forms import StyledMixin
+from apps.market.models import Listing, Order
 
 from .models import Agency, AgencyStaff, FamilyMember
 
 
 class AgencyForm(StyledMixin, forms.ModelForm):
-    """Console: create / edit an agency. On create, the owner's account is set up too."""
+    """Console: create / edit a partner company. On create, the owner's account is set up too."""
 
     owner_name = forms.CharField(label="Owner full name", max_length=150, required=False)
     owner_phone = forms.CharField(label="Owner phone", max_length=20, required=False,
-                                  help_text="The owner signs in to the agency portal with this number.")
+                                  help_text="The owner signs in to the company portal with this number.")
     owner_password = forms.CharField(label="Owner password", required=False, min_length=6,
                                      widget=forms.PasswordInput(render_value=True),
                                      help_text="At least 6 characters. Leave empty for an existing account.")
     bank_code = forms.TypedChoiceField(label="Bank", coerce=int, required=False, empty_value=None)
 
     sections = [
-        ("Agency", "", ["name", "license_number", "tin", "phone", "email", "city", "address"]),
-        ("Owner account", "The person who runs the agency. They can add their own sales agents later.",
+        ("Company", "", ["name", "kind", "license_number", "tin", "phone", "email", "website", "city", "address"]),
+        ("Public profile", "What customers see on the company page in the app.",
+         ["description", "logo_url", "is_verified"]),
+        ("Owner account", "The person who runs the company account. They can add their own sales team later.",
          ["owner_name", "owner_phone", "owner_password"]),
-        ("Commission & status", "Vacation Equb's cut is taken from every ticket and package the agency sells.",
+        ("Commission & status", "Nebret Equb's commission is taken from every sale the company makes.",
          ["commission_percent", "status"]),
-        ("Payout bank account", "Chapa sends the agency's share of every sale here automatically, once the Chapa "
-                                "subaccount is created on the agency's page.",
+        ("Payout bank account", "Chapa sends the company's share of every sale here automatically, once the Chapa "
+                                "subaccount is created on the company's page.",
          ["bank_code", "account_name", "account_number"]),
         ("Internal", "", ["notes"]),
     ]
 
     class Meta:
         model = Agency
-        fields = ["name", "license_number", "tin", "phone", "email", "city", "address", "commission_percent",
-                  "status", "bank_code", "account_name", "account_number", "notes"]
-        labels = {"commission_percent": "Vacation Equb commission (%)", "account_name": "Account holder name"}
+        fields = ["name", "kind", "license_number", "tin", "phone", "email", "website", "city", "address",
+                  "description", "logo_url", "is_verified", "commission_percent", "status", "bank_code",
+                  "account_name", "account_number", "notes"]
+        labels = {"commission_percent": "Nebret Equb commission (%)", "account_name": "Account holder name",
+                  "is_verified": "Verified seller"}
+        widgets = {"description": forms.Textarea(attrs={"rows": 3})}
 
     def __init__(self, *args, banks=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,6 +74,146 @@ class AgencyForm(StyledMixin, forms.ModelForm):
         return obj
 
 
+class CompanyProfileForm(StyledMixin, forms.ModelForm):
+    """Company portal: what the company may change about itself."""
+
+    sections = [("Public profile", "Shown to customers in the app.",
+                 ["description", "logo_url", "website", "phone", "email", "address"])]
+
+    class Meta:
+        model = Agency
+        fields = ["description", "logo_url", "website", "phone", "email", "address"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 4})}
+
+
+class JSONListField(forms.CharField):
+    """One item per line ⇄ JSON list."""
+
+    widget = forms.Textarea(attrs={"rows": 4})
+
+    def prepare_value(self, value):
+        if isinstance(value, (list, tuple)):
+            return "\n".join(str(v) for v in value)
+        return value
+
+    def to_python(self, value):
+        return [line.strip() for line in (value or "").splitlines() if line.strip()]
+
+
+class SpecsField(forms.CharField):
+    """``key: value`` per line ⇄ JSON object (numbers stay numbers)."""
+
+    widget = forms.Textarea(attrs={"rows": 5, "placeholder": "bedrooms: 3\narea_m2: 145\nfloor: 4"})
+
+    def prepare_value(self, value):
+        if isinstance(value, dict):
+            return "\n".join(f"{k}: {v}" for k, v in value.items())
+        return value
+
+    def to_python(self, value):
+        out = {}
+        for line in (value or "").splitlines():
+            if ":" not in line:
+                continue
+            k, v = (p.strip() for p in line.split(":", 1))
+            if not k:
+                continue
+            key = k.lower().replace(" ", "_")
+            try:
+                out[key] = json.loads(v)
+            except ValueError:
+                out[key] = v
+        return out
+
+
+class ListingForm(StyledMixin, forms.ModelForm):
+    """Create / edit a listing (company portal and console)."""
+
+    features = JSONListField(required=False, help_text="One per line, e.g. Parking, Elevator, 24/7 security.")
+    specs = SpecsField(required=False, help_text="One fact per line as “name: value”. The category's spec names are "
+                                                 "shown first in the app.")
+    initial_units = forms.IntegerField(label="How many units for sale", min_value=0, max_value=1000, required=False,
+                                       initial=1, help_text="Each unit is one sellable item (apartment, car, e-bike…). "
+                                                            "You can add or name units later.")
+    gallery = JSONListField(label="More photos (links)", required=False, help_text="One picture link per line.")
+
+    sections = [
+        ("What you are selling", "", ["category", "title", "summary", "description", "brand", "model_name", "year",
+                                      "condition"]),
+        ("Location", "", ["city", "area", "address"]),
+        ("Details", "", ["specs", "features", "image_url", "gallery", "video_url"]),
+        ("Price", "", ["price", "compare_at_price", "initial_units"]),
+        ("How customers can pay", "Offer at least one. Installments use a flat, fixed finance charge (0 = "
+                                  "interest-free).",
+         ["allow_full_payment", "allow_reservation", "reservation_fee", "reservation_days", "allow_installments",
+          "min_down_payment_percent", "max_installment_months", "finance_rate_percent", "allow_equb_payout"]),
+        ("Handover", "", ["delivery_available", "delivery_fee", "handover_days", "warranty_months"]),
+        ("Publishing", "", ["status", "is_featured"]),
+    ]
+
+    class Meta:
+        model = Listing
+        fields = ["category", "title", "summary", "description", "brand", "model_name", "year", "condition", "city",
+                  "area", "address", "specs", "features", "image_url", "video_url", "price", "compare_at_price",
+                  "allow_full_payment", "allow_reservation", "reservation_fee", "reservation_days",
+                  "allow_installments", "min_down_payment_percent", "max_installment_months", "finance_rate_percent",
+                  "allow_equb_payout", "delivery_available", "delivery_fee", "handover_days", "warranty_months",
+                  "status", "is_featured"]
+        widgets = {"description": forms.Textarea(attrs={"rows": 5})}
+
+    def __init__(self, *args, company_portal=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields.pop("initial_units")
+            self.sections = [(t, h, [n for n in names if n != "initial_units"]) for t, h, names in self.sections]
+            self.fields["gallery"].initial = [i.image_url for i in self.instance.images.all() if i.image_url]
+        if company_portal:
+            self.fields.pop("is_featured")
+            self.sections = [(t, h, [n for n in names if n != "is_featured"]) for t, h, names in self.sections]
+
+    def save(self, commit=True):
+        obj = super().save(commit=commit)
+        if commit:
+            self.save_gallery(obj)
+        return obj
+
+    def save_gallery(self, obj):
+        from apps.market.models import ListingImage
+
+        urls = self.cleaned_data.get("gallery") or []
+        obj.images.filter(image="").exclude(image_url__in=urls).delete()
+        have = set(obj.images.values_list("image_url", flat=True))
+        ListingImage.objects.bulk_create([ListingImage(listing=obj, image_url=u, sort_order=i)
+                                          for i, u in enumerate(urls) if u not in have])
+
+
+class UnitsForm(StyledMixin, forms.Form):
+    count = forms.IntegerField(label="Add units", min_value=1, max_value=500, initial=1)
+    prefix = forms.CharField(label="Code prefix", max_length=12, required=False,
+                             help_text="e.g. BLK-A, VIN or EBK. Codes are numbered automatically.")
+    sections = [("Add stock", "", ["count", "prefix"])]
+
+
+class SaleForm(StyledMixin, forms.Form):
+    """Company portal / console: place an order for a customer."""
+
+    listing = forms.ModelChoiceField(queryset=Listing.objects.none())
+    plan = forms.ChoiceField(choices=Order.Plan.choices)
+    months = forms.IntegerField(label="Installment months", min_value=1, max_value=120, required=False)
+    down_payment = forms.DecimalField(max_digits=14, decimal_places=2, required=False,
+                                      help_text="Installments only. Empty = the minimum down payment.")
+    delivery_method = forms.ChoiceField(choices=Order.Delivery.choices, initial=Order.Delivery.PICKUP)
+    delivery_address = forms.CharField(max_length=255, required=False)
+    buyer_name = forms.CharField(label="Name on the contract / title", max_length=120, required=False)
+    buyer_id_number = forms.CharField(label="National ID / Kebele ID", max_length=40, required=False)
+    sections = [("Item & payment", "", ["listing", "plan", "months", "down_payment"]),
+                ("Handover & buyer", "", ["delivery_method", "delivery_address", "buyer_name", "buyer_id_number"])]
+
+    def __init__(self, *args, listings=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["listing"].queryset = listings if listings is not None else Listing.objects.live()
+
+
 class StaffForm(StyledMixin, forms.Form):
     full_name = forms.CharField(max_length=150)
     phone = forms.CharField(max_length=20, help_text="They sign in with this phone number.")
@@ -76,48 +224,25 @@ class StaffForm(StyledMixin, forms.Form):
 
 
 class CustomerForm(StyledMixin, forms.Form):
-    full_name = forms.CharField(max_length=150, help_text="As written on their passport or ID.")
+    full_name = forms.CharField(max_length=150, help_text="As written on their national ID.")
     phone = forms.CharField(max_length=20, help_text="Their own mobile number, e.g. 0911 234 567.")
     email = forms.EmailField(required=False)
     password = forms.CharField(required=False, min_length=6, widget=forms.PasswordInput(render_value=True),
-                               help_text="Optional – lets them sign in to the Vacation Equb app too.")
+                               help_text="Optional – lets them sign in to the Nebret Equb app too.")
     notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
     sections = [("Customer", "", ["full_name", "phone", "email", "password", "notes"])]
 
 
 class FamilyForm(StyledMixin, forms.ModelForm):
-    sections = [("Family member", "Used to fill in passenger details and to give them an Equb place that the "
-                                  "customer pays for.",
-                 ["first_name", "last_name", "relation", "gender", "date_of_birth", "phone", "passport_number",
-                  "passport_expiry"])]
+    sections = [("Family member", "A co-buyer or beneficiary on an order, or an Equb place that the customer pays for.",
+                 ["first_name", "last_name", "relation", "gender", "date_of_birth", "phone", "national_id"])]
 
     class Meta:
         model = FamilyMember
-        fields = ["first_name", "last_name", "relation", "gender", "date_of_birth", "phone", "passport_number",
-                  "passport_expiry"]
+        fields = ["first_name", "last_name", "relation", "gender", "date_of_birth", "phone", "national_id"]
 
     def clean_date_of_birth(self):
         d = self.cleaned_data["date_of_birth"]
         if d > timezone.localdate():
             raise forms.ValidationError("The date of birth can't be in the future.")
         return d
-
-
-class TravellerForm(forms.Form):
-    """One traveller on a portal booking."""
-
-    first_name = forms.CharField(max_length=60)
-    last_name = forms.CharField(max_length=60)
-    gender = forms.ChoiceField(choices=[("M", "Male"), ("F", "Female")])
-    date_of_birth = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
-    passport_number = forms.CharField(max_length=32, required=False)
-    passport_expiry = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"))
-
-    def clean_date_of_birth(self):
-        d = self.cleaned_data["date_of_birth"]
-        if d > timezone.localdate():
-            raise forms.ValidationError("Date of birth can't be in the future.")
-        return d
-
-
-TravellerFormSet = forms.formset_factory(TravellerForm, extra=0, min_num=1, validate_min=True, max_num=9)

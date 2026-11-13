@@ -1,4 +1,4 @@
-"""Agency business rules: who a sale belongs to, the 5 % commission, customers, Equb places, payouts."""
+"""Partner-company rules: who a sale belongs to, the 5 % commission, customers, Equb places, listings, payouts."""
 from __future__ import annotations
 
 import logging
@@ -21,7 +21,7 @@ Payout = AgencyLedgerEntry.Payout
 
 # --------------------------------------------------------------------------- who is who
 def staff_for(user) -> AgencyStaff | None:
-    """The active agency membership of a signed-in user, if their agency is active."""
+    """The company a signed-in user works for, if that company is not suspended."""
     if not getattr(user, "is_authenticated", False):
         return None
     st = AgencyStaff.objects.select_related("agency").filter(user=user, is_active=True).first()
@@ -35,14 +35,15 @@ def agency_of_customer(user) -> Agency | None:
 
 def agency_for_payment(target, user) -> Agency | None:
     """
-    Ticket and package sales to an agency's customers are agency sales (Chapa splits them).
-    Equb contributions and crowdfunding gifts are not: that money is the members' pot / the cause.
+    Payments for a company's listing (full price, reservation, down payment, installments) are that company's sales
+    and Chapa splits them. Equb contributions and crowdfunding gifts are not: that money is the members' pot / the cause.
     """
-    from apps.travel.models import Booking
+    from apps.market.models import Installment, Order
 
-    if not isinstance(target, Booking):
+    order = target.order if isinstance(target, Installment) else target if isinstance(target, Order) else None
+    if order is None or not order.company_id:
         return None
-    return agency_of_customer(target.user)
+    return order.company if order.company.status != Agency.Status.SUSPENDED else None
 
 
 # --------------------------------------------------------------------------- commission ledger
@@ -57,49 +58,60 @@ def record_commission(txn) -> AgencyLedgerEntry | None:
         return None
     agency = txn.agency
     commission, share = _split(agency, txn.amount)
-    booking = txn.target if txn.purpose == "BOOKING" else None
+    order = _order_of(txn.target)
     try:
         with transaction.atomic():
             return AgencyLedgerEntry.objects.create(
-                agency=agency, kind=AgencyLedgerEntry.Kind.GATEWAY, booking=booking, payment=txn, customer=txn.user,
+                agency=agency, kind=AgencyLedgerEntry.Kind.GATEWAY, order=order, payment=txn, customer=txn.user,
                 gross_amount=txn.amount, commission_percent=agency.commission_percent, commission=commission,
                 agency_amount=share, payout_status=Payout.SETTLED_BY_CHAPA if txn.split_settled else Payout.OWED,
-                description=f"{txn.get_provider_display()} · {getattr(booking, 'reference', '')} "
-                            f"{getattr(booking, 'destination_label', '')}".strip()[:200])
+                description=f"{txn.get_provider_display()} · {txn.get_purpose_display()} · "
+                            f"{getattr(order, 'reference', '')} {getattr(getattr(order, 'listing', None), 'title', '')}"
+                            .strip()[:200])
     except IntegrityError:  # raced with another webhook
         return None
 
 
-def on_booking_saved(sender, instance, created, **kwargs):
-    """Bookings paid (fully or partly) with an Equb payout / prize credit: the agency is owed its share."""
-    from apps.travel.models import Booking
+def _order_of(target):
+    from apps.market.models import Installment, Order
 
-    if instance.status == Booking.Status.REFUNDED:
+    if isinstance(target, Order):
+        return target
+    if isinstance(target, Installment):
+        return target.order
+    return None
+
+
+def on_order_saved(sender, instance, created, **kwargs):
+    """Orders paid (fully or partly) with an Equb payout / prize credit: the company is owed its share."""
+    from apps.market.models import Order
+
+    if instance.status == Order.Status.REFUNDED:
         reverse_for_refund(instance)
         return
-    if instance.status != Booking.Status.CONFIRMED or instance.funding_source == Booking.Funding.DIRECT:
+    if instance.funding_source == Order.Funding.DIRECT or not instance.company_id:
+        return
+    if instance.status not in (*Order.LIVE_STATUSES, Order.Status.COMPLETED):
         return
     credit = Decimal(str((instance.price_breakdown or {}).get("credit_applied") or 0))
-    if credit <= 0:
+    if credit <= 0 or AgencyLedgerEntry.objects.filter(order=instance, kind=AgencyLedgerEntry.Kind.CREDIT).exists():
         return
-    agency = agency_of_customer(instance.user)
-    if not agency or AgencyLedgerEntry.objects.filter(booking=instance, kind=AgencyLedgerEntry.Kind.CREDIT).exists():
-        return
+    agency = instance.company
     commission, share = _split(agency, credit)
     try:
         with transaction.atomic():
             AgencyLedgerEntry.objects.create(
-                agency=agency, kind=AgencyLedgerEntry.Kind.CREDIT, booking=instance, customer=instance.user,
+                agency=agency, kind=AgencyLedgerEntry.Kind.CREDIT, order=instance, customer=instance.user,
                 gross_amount=credit, commission_percent=agency.commission_percent, commission=commission,
                 agency_amount=share, payout_status=Payout.OWED,
-                description=f"{instance.get_funding_source_display()} · {instance.reference} {instance.destination_label}"[:200])
+                description=f"{instance.get_funding_source_display()} · {instance.reference} {instance.listing.title}"[:200])
     except IntegrityError:
         pass
 
 
-def reverse_for_refund(booking) -> int:
-    """A refunded booking: owed entries are cancelled so they are not paid out."""
-    return AgencyLedgerEntry.objects.filter(booking=booking, payout_status=Payout.OWED).update(
+def reverse_for_refund(order) -> int:
+    """A refunded order: owed entries are cancelled so they are not paid out."""
+    return AgencyLedgerEntry.objects.filter(order=order, payout_status=Payout.OWED).update(
         payout_status=Payout.REVERSED)
 
 
@@ -120,7 +132,7 @@ def mark_paid(entries, *, by, reference: str = "") -> int:
         payout_status=Payout.PAID, paid_at=timezone.now(), paid_by=by, paid_reference=(reference or "")[:64])
 
 
-# --------------------------------------------------------------------------- agencies & team
+# --------------------------------------------------------------------------- companies & team
 @transaction.atomic
 def create_agency(*, name: str, phone: str, owner_name: str, owner_phone: str, owner_password: str = "",
                   created_by=None, **fields) -> Agency:
@@ -149,12 +161,12 @@ def add_staff(agency: Agency, *, full_name: str, phone: str, password: str = "",
               email: str = "") -> AgencyStaff:
     user, created = _user_for(phone, full_name, email)
     if user.is_staff:
-        raise BusinessRuleError("This phone belongs to a Vacation Equb staff account.")
+        raise BusinessRuleError("This phone belongs to a Nebret Equb staff account.")
     existing = AgencyStaff.objects.filter(user=user).select_related("agency").first()
     if existing and existing.agency_id != agency.id:
         raise BusinessRuleError(f"{user.full_name} already works for {existing.agency.name}.")
     if AgencyCustomer.objects.filter(user=user).exclude(agency=agency).exists():
-        raise BusinessRuleError(f"{user.full_name} is a customer of another agency.")
+        raise BusinessRuleError(f"{user.full_name} is a customer of another company.")
     if password:
         if len(password) < 6:
             raise BusinessRuleError("The password needs at least 6 characters.")
@@ -173,7 +185,7 @@ def add_customer(agency: Agency, *, full_name: str, phone: str, email: str = "",
                  notes: str = "", added_by=None) -> tuple[AgencyCustomer, bool]:
     """Register a new customer (or link an existing app user who isn't with another agency)."""
     if not agency.is_active:
-        raise BusinessRuleError("Your agency is not active yet. Contact Vacation Equb.")
+        raise BusinessRuleError("Your company is not active yet. Contact Nebret Equb.")
     user, created = _user_for(phone, full_name, email)
     if user.is_staff or AgencyStaff.objects.filter(user=user).exists():
         raise BusinessRuleError("This phone number belongs to a staff account.")
@@ -181,7 +193,7 @@ def add_customer(agency: Agency, *, full_name: str, phone: str, email: str = "",
     if link:
         if link.agency_id == agency.id:
             raise BusinessRuleError(f"{user.full_name} is already one of your customers.")
-        raise BusinessRuleError(f"{user.full_name} is already registered with another agency.")
+        raise BusinessRuleError(f"{user.full_name} is already registered with another company.")
     if password:
         if len(password) < 6:
             raise BusinessRuleError("The password needs at least 6 characters.")
@@ -215,7 +227,7 @@ def enrol(customer: AgencyCustomer, group, *, family_member: FamilyMember | None
     from apps.equb.services import join_group
 
     if not customer.agency.is_active:
-        raise BusinessRuleError("Your agency is not active.")
+        raise BusinessRuleError("Your company is not active.")
     if family_member:
         if family_member.customer_id != customer.id:
             raise BusinessRuleError("That person is not in this customer's family.")
@@ -224,52 +236,33 @@ def enrol(customer: AgencyCustomer, group, *, family_member: FamilyMember | None
     return join_group(customer.user, group)
 
 
-# --------------------------------------------------------------------------- bookings
-def passenger_from(*, first_name, last_name, gender, date_of_birth, passport_number="", passport_expiry=None,
-                   phone="", nationality="ET") -> dict:
-    """Shape a traveller for ``create_flight_booking`` / ``create_package_booking``."""
-    from datetime import date
+# --------------------------------------------------------------------------- sales
+def start_checkout(order, *, count: int = 1, provider: str | None = None):
+    """Create (or reuse) the customer's payment link for what is due now on an order – Chapa by default."""
+    from apps.market.services.orders import start_payment
 
-    dob = date_of_birth
-    today = timezone.localdate()
-    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-    ptype = "INF" if age < 2 else "CHD" if age < 12 else "ADT"
-    out = {"passenger_type": ptype, "first_name": first_name, "last_name": last_name, "gender": gender,
-           "date_of_birth": dob, "nationality": nationality or "ET", "phone": phone or ""}
-    if passport_number:
-        out["passport_number"] = passport_number
-    if passport_expiry:
-        out["passport_expiry"] = passport_expiry
-    return out
-
-
-def start_checkout(booking, *, provider: str | None = None):
-    """Create (or reuse) the customer's payment for a booking – Chapa by default for agency sales."""
-    from apps.payments.models import PaymentTransaction
-    from apps.payments.services import initiate_payment
-
-    if not booking.is_payable:
-        raise BusinessRuleError("This booking can't be paid any more (it was paid, expired or cancelled).")
-    if booking.total_amount <= 0:
-        raise BusinessRuleError("Nothing to pay on this booking.")
     provider = provider or ("chapa" if settings.PAYMENT_GATEWAYS.get("chapa", {}).get("SECRET_KEY")
-                            else settings.VACATION["DEFAULT_PAYMENT_PROVIDER"])
-    return initiate_payment(user=booking.user, target=booking, amount=booking.total_amount,
-                            purpose=PaymentTransaction.Purpose.BOOKING, provider=provider,
-                            payer_phone=booking.contact_phone)
+                            else settings.NEBRET["DEFAULT_PAYMENT_PROVIDER"])
+    return start_payment(order, order.user, count=count, provider=provider)
+
+
+def company_orders(agency: Agency):
+    from apps.market.models import Order
+
+    return Order.objects.filter(company=agency)
 
 
 # --------------------------------------------------------------------------- Chapa subaccount
 def create_chapa_subaccount(agency: Agency) -> str:
-    """Register the agency's bank account with Chapa so its share is paid automatically on every sale."""
+    """Register the company's bank account with Chapa so its share is paid automatically on every sale."""
     from apps.payments.gateways import GatewayError, get_gateway
 
     if agency.chapa_subaccount_id:
-        raise BusinessRuleError("This agency already has a Chapa subaccount.")
+        raise BusinessRuleError("This company already has a Chapa subaccount.")
     missing = [label for label, v in (("bank", agency.bank_code), ("account name", agency.account_name),
                                       ("account number", agency.account_number)) if not v]
     if missing:
-        raise BusinessRuleError("Add the agency's " + ", ".join(missing) + " first.")
+        raise BusinessRuleError("Add the company's " + ", ".join(missing) + " first.")
     try:
         sub_id = get_gateway("chapa").create_subaccount(
             business_name=agency.name, account_name=agency.account_name, bank_code=agency.bank_code,

@@ -1,14 +1,15 @@
 """
 Community Finance & Impact – two separate, Shariah-compliant systems:
 
-1. **Crowdfunding Hub (Sadaqah / Hibah)** – people give voluntarily to help a community member reach Umrah, Hajj
-   or another travel goal. The gift goes 100% to the cause; Vacation Equb's platform fee is a separate, explicit amount
+1. **Crowdfunding Hub (Sadaqah / Hibah)** – people give voluntarily to help a community member get a home, a vehicle
+   or an e-bike to work with. The gift goes 100% to the cause; Nebret Equb's platform fee is a separate, explicit amount
    added on top at checkout (100 ETB gift + 5% fee = 105 ETB paid). Giving never earns a ticket or a prize.
-2. **Community Giveaways** – promotional trips paid for entirely by Vacation Equb's marketing budget or a sponsor.
+2. **Community Giveaways** – promotional prizes (an e-bike, purchase credit, paid Equb rounds) paid for entirely by
+   Nebret Equb's marketing budget or a sponsor.
    Entry is free: every N friends you invite who register (10 by default) earns one entry. Nobody pays to enter,
    so there is no stake and no Maysir. Winners are picked with the provably-fair draw in ``apps.core.fairness``.
 
-(The app label stays ``luckydraw`` so existing data and payment records migrate in place.)
+(The app label is ``luckydraw`` for historical reasons; the API lives under ``/api/community/``.)
 """
 from decimal import Decimal
 
@@ -46,7 +47,7 @@ class CampaignQuerySet(models.QuerySet):
 
 
 class CrowdfundingCampaign(TimeStampedModel):
-    """A cause people give to – e.g. helping an elderly mother of the community reach Umrah."""
+    """A cause people give to – e.g. helping a family that lost its house get a new home."""
 
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Draft"
@@ -56,19 +57,20 @@ class CrowdfundingCampaign(TimeStampedModel):
         CANCELLED = "CANCELLED", "Cancelled"
 
     class Category(models.TextChoices):
-        UMRAH = "UMRAH", "Umrah"
-        HAJJ = "HAJJ", "Hajj"
-        TRAVEL = "TRAVEL", "Travel"
+        HOME = "HOME", "A home for a family"
+        VEHICLE = "VEHICLE", "A vehicle to work with"
+        EBIKE = "EBIKE", "An e-bike for a livelihood"
+        BUSINESS = "BUSINESS", "Small business equipment"
         COMMUNITY = "COMMUNITY", "Community need"
 
     title = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True, blank=True)
-    category = models.CharField(max_length=10, choices=Category.choices, default=Category.UMRAH)
+    category = models.CharField(max_length=10, choices=Category.choices, default=Category.HOME)
     story = models.TextField(blank=True, help_text="Who is being helped and why")
     image_url = models.URLField(blank=True)
     beneficiary_name = models.CharField(max_length=150, help_text="Who receives the money (shown to donors)")
     beneficiary = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
-                                    related_name="crowdfunding_campaigns", help_text="Their Vacation Equb account, if any")
+                                    related_name="crowdfunding_campaigns", help_text="Their Nebret Equb account, if any")
     goal_amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(1)])
     platform_fee_percent = models.DecimalField(
         max_digits=4, decimal_places=2, default=Decimal("5"), validators=[MinValueValidator(0), MaxValueValidator(20)],
@@ -153,7 +155,7 @@ class Donation(TimeStampedModel):
 
 
 class Disbursement(TimeStampedModel):
-    """Money paid out of a campaign to its beneficiary (or straight to a travel booking for them)."""
+    """Money paid out of a campaign to its beneficiary (or straight to the seller of the property for them)."""
 
     campaign = models.ForeignKey(CrowdfundingCampaign, on_delete=models.PROTECT, related_name="disbursements")
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(1)])
@@ -179,7 +181,7 @@ class GiveawayQuerySet(models.QuerySet):
 
 
 class Giveaway(TimeStampedModel):
-    """A promotional trip paid by Vacation Equb or a sponsor. Entries are free – earned only by inviting friends."""
+    """A promotional prize paid by Nebret Equb or a sponsor. Entries are free – earned only by inviting friends."""
 
     class Status(models.TextChoices):
         SCHEDULED = "SCHEDULED", "Scheduled"
@@ -189,12 +191,12 @@ class Giveaway(TimeStampedModel):
         CANCELLED = "CANCELLED", "Cancelled"
 
     class PrizeType(models.TextChoices):
-        TRAVEL_PACKAGE = "TRAVEL_PACKAGE", "Travel package (Umrah, Hajj, tour)"
-        TRAVEL_CREDIT = "TRAVEL_CREDIT", "Travel credit (flight booking)"
+        LISTING = "LISTING", "A marketplace item (e-bike, phone, appliance…)"
+        PURCHASE_CREDIT = "PURCHASE_CREDIT", "Purchase credit (used on any order)"
         EQUB_CONTRIBUTION = "EQUB_CONTRIBUTION", "Paid Equb contributions"
 
     class SponsorType(models.TextChoices):
-        COMPANY = "COMPANY", "Vacation Equb marketing budget"
+        COMPANY = "COMPANY", "Nebret Equb marketing budget"
         CORPORATE = "CORPORATE", "Corporate sponsor"
 
     title = models.CharField(max_length=120)
@@ -203,14 +205,14 @@ class Giveaway(TimeStampedModel):
     image_url = models.URLField(blank=True)
 
     sponsor_type = models.CharField(max_length=10, choices=SponsorType.choices, default=SponsorType.COMPANY)
-    sponsor_name = models.CharField(max_length=120, default="Vacation Equb")
+    sponsor_name = models.CharField(max_length=120, default="Nebret Equb")
     sponsor_note = models.CharField(max_length=255, blank=True, help_text="e.g. 'Fully paid by Awash Bank'")
     sponsor_logo_url = models.URLField(blank=True)
 
     prize_type = models.CharField(max_length=18, choices=PrizeType.choices)
-    prize_title = models.CharField(max_length=120, help_text="e.g. 'Umrah package for one'")
+    prize_title = models.CharField(max_length=120, help_text="e.g. 'Electric delivery bike'")
     prize_value = models.DecimalField(max_digits=12, decimal_places=2, help_text="Value per winner (ETB), paid by the sponsor")
-    prize_package = models.ForeignKey("travel.TravelPackage", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    prize_listing = models.ForeignKey("market.Listing", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     prize_equb_group = models.ForeignKey("equb.EqubGroup", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     number_of_winners = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
 
@@ -300,7 +302,7 @@ class GiveawayWinner(TimeStampedModel):
     prize_value = models.DecimalField(max_digits=12, decimal_places=2)
     voucher_code = models.CharField(max_length=12, unique=True)
     claimed_at = models.DateTimeField(null=True, blank=True)
-    claimed_booking = models.ForeignKey("travel.Booking", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    claimed_order = models.ForeignKey("market.Order", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     claimed_equb_membership = models.ForeignKey("equb.EqubMembership", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
     class Meta:

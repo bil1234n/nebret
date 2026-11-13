@@ -4,7 +4,7 @@ Community Finance & Impact services.
 Crowdfunding: a donor gives ``amount`` (100% to the cause) and pays ``amount + fee`` – the platform fee is a separate,
 explicit add-on. Donations never earn entries or prizes.
 
-Giveaways: free entries, earned only by referrals – every ``referrals_per_entry`` friends (10) who register on Vacation Equb
+Giveaways: free entries, earned only by referrals – every ``referrals_per_entry`` friends (10) who register on Nebret Equb
 with your code during the giveaway = 1 entry. Entries are issued as contiguous number ranges under a row lock and
 the winners are picked with the commit/reveal draw in ``apps.core.fairness`` (anyone can verify it afterwards).
 """
@@ -41,13 +41,13 @@ def money(v) -> str:
 
 
 def mask(name: str) -> str:
-    parts = (name or "Vacation Equb user").split()
+    parts = (name or "Nebret Equb user").split()
     return parts[0] + (f" {parts[1][0]}." if len(parts) > 1 else "")
 
 
 # =========================================================================== crowdfunding
 def quote(campaign: CrowdfundingCampaign, amount) -> dict:
-    """The checkout breakdown: gift (to the cause) + platform fee (to Vacation Equb) = total."""
+    """The checkout breakdown: gift (to the cause) + platform fee (to Nebret Equb) = total."""
     amount = Decimal(amount).quantize(CENT)
     fee = campaign.fee_for(amount)
     return {"amount": amount, "fee_percent": campaign.platform_fee_percent, "fee": fee, "total": amount + fee}
@@ -89,7 +89,7 @@ def on_donation_paid(txn):
            f"Your {d.get_kind_display().split(' (')[0]} of {money(d.amount)} ETB to “{c.title}” was received. "
            f"{c.progress_percent:.0f}% of the goal is now raised.", {"campaign": c.slug, "donation": d.id})
     if c.beneficiary_id and c.beneficiary_id != d.user_id:
-        notify(c.beneficiary, Notification.Kind.DONATION, "Someone gave to your journey 🤲",
+        notify(c.beneficiary, Notification.Kind.DONATION, "Someone gave to your cause 🤲",
                f"{'An anonymous donor' if d.is_anonymous else mask(d.user.full_name)} gave {money(d.amount)} ETB to "
                f"“{c.title}”.", {"campaign": c.slug})
     if reached:
@@ -169,7 +169,7 @@ def _sync_participant(giveaway_id: int, user, notify_user: bool = True) -> Givea
                    {"giveaway": g.slug})
         else:
             left = g.referrals_per_entry - refs % g.referrals_per_entry
-            notify(user, Notification.Kind.PROMO, "Your friend joined Vacation Equb 🎉",
+            notify(user, Notification.Kind.PROMO, "Your friend joined Nebret Equb 🎉",
                    f"{refs % g.referrals_per_entry}/{g.referrals_per_entry} friends for your next free entry in “{g.title}” – "
                    f"{left} more to go.", {"giveaway": g.slug})
     return p
@@ -179,7 +179,7 @@ def on_referral_signup(*, referrer, new_user):
     """A friend registered with ``referrer``'s code: update their progress in every live giveaway."""
     live = list(Giveaway.objects.live().values_list("pk", flat=True))
     if not live:
-        notify(referrer, Notification.Kind.PROMO, "Your friend joined Vacation Equb 🎉",
+        notify(referrer, Notification.Kind.PROMO, "Your friend joined Nebret Equb 🎉",
                f"{new_user.first_name} signed up with your code. Invite friends during a giveaway to earn free entries.", {})
         return
     for pk in live:
@@ -277,11 +277,15 @@ def verify(g: Giveaway) -> dict:
 
 
 @transaction.atomic
-def claim_prize(winner: GiveawayWinner, *, booking_reference: str | None = None) -> GiveawayWinner:
+def claim_prize(winner: GiveawayWinner, *, order_reference: str | None = None) -> GiveawayWinner:
+    """
+    Equb prizes are paid into the winner's Equb place. Marketplace prizes are used as credit on an order: for a
+    LISTING prize the order must be for that listing (the prize normally covers it in full).
+    """
     from apps.equb.models import EqubMembership
     from apps.equb.services import apply_credit, join_group
-    from apps.travel.models import Booking
-    from apps.travel.services.bookings import book_with_credit
+    from apps.market.models import Order
+    from apps.market.services.orders import apply_credit as apply_order_credit
 
     winner = GiveawayWinner.objects.select_for_update().select_related("giveaway").get(pk=winner.pk)
     if winner.claimed_at:
@@ -297,15 +301,16 @@ def claim_prize(winner: GiveawayWinner, *, booking_reference: str | None = None)
         apply_credit(m)
         winner.claimed_equb_membership = m
     else:
-        if not booking_reference:
-            raise BusinessRuleError("Create a booking first, then claim the prize against it.")
-        booking = Booking.objects.filter(reference=booking_reference.upper(), user=winner.user).first()
-        if not booking or booking.status != Booking.Status.PENDING_PAYMENT:
-            raise BusinessRuleError("Booking not found or not awaiting payment.")
-        if g.prize_type == Giveaway.PrizeType.TRAVEL_PACKAGE and g.prize_package_id and booking.package_id != g.prize_package_id:
-            raise BusinessRuleError("This prize is valid only for its travel package.")
-        book_with_credit(booking, winner.prize_value, Booking.Funding.LUCKY_DRAW, winner.voucher_code)
-        winner.claimed_booking = booking
+        if not order_reference:
+            raise BusinessRuleError("Place an order first, then claim the prize against it.")
+        order = Order.objects.filter(reference=order_reference.upper(), user=winner.user).first()
+        if not order or order.status not in (Order.Status.PENDING_PAYMENT, Order.Status.RESERVED,
+                                             Order.Status.INSTALLMENTS):
+            raise BusinessRuleError("Order not found, or it has nothing left to pay.")
+        if g.prize_type == Giveaway.PrizeType.LISTING and g.prize_listing_id and order.listing_id != g.prize_listing_id:
+            raise BusinessRuleError(f"This prize is valid only for {g.prize_listing.title}.")
+        apply_order_credit(order, winner.prize_value, Order.Funding.LUCKY_DRAW, winner.voucher_code)
+        winner.claimed_order = order
     winner.claimed_at = timezone.now()
     winner.save()
     return winner

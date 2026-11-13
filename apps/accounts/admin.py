@@ -9,14 +9,14 @@ class UserAdmin(BaseUserAdmin):
     ordering = ["-date_joined"]
     list_display = ["phone", "full_name", "email", "referral_code", "is_phone_verified", "is_staff", "deletion_status",
                     "date_joined"]
-    search_fields = ["phone", "full_name", "email", "referral_code", "passport_number"]
+    search_fields = ["phone", "full_name", "email", "referral_code", "national_id"]
     list_filter = ["is_staff", "is_active", "is_phone_verified", "preferred_language", "deletion_status"]
     readonly_fields = ["referral_code", "date_joined", "last_login", "deletion_requested_at", "deletion_reviewed_at",
                        "deletion_reviewed_by"]
     fieldsets = (
         (None, {"fields": ("phone", "password")}),
         ("Profile", {"fields": ("full_name", "email", "preferred_language", "date_of_birth")}),
-        ("Travel documents", {"fields": ("national_id", "passport_number", "passport_expiry")}),
+        ("Buyer details", {"fields": ("national_id", "city", "address")}),
         ("Growth", {"fields": ("referral_code", "referred_by", "push_token")}),
         ("Permissions", {"fields": ("is_active", "is_phone_verified", "is_staff", "is_superuser", "groups", "user_permissions")}),
         ("Dates", {"fields": ("last_login", "date_joined")}),

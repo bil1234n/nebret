@@ -1,0 +1,23 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}New sale{% endblock %}{% block heading %}New sale{% endblock %}{% block crumbs %}Place an order for one of your customers{% endblock %}
+{% block content %}
+<form method="get" class="card">
+  <div class="card-h"><h2>1 · Customer</h2><a class="small" href="{% url 'agency:customer_add' %}">+ New customer</a></div>
+  <div class="toolbar" style="margin:0">
+    <select class="grow" name="customer" onchange="this.form.submit()"><option value="">— choose the customer —</option>
+      {% for cu in customers %}<option value="{{ cu.pk }}" {% if c and c.pk == cu.pk %}selected{% endif %}>{{ cu.user.full_name }} · {{ cu.user.phone }}</option>{% endfor %}</select>
+    {% if request.GET.listing %}<input type="hidden" name="listing" value="{{ request.GET.listing }}">{% endif %}
+  </div>
+</form>
+{% if c %}
+<form method="post" class="form-page mt" novalidate>{% csrf_token %}<input type="hidden" name="customer" value="{{ c.pk }}">
+  {% if form.errors %}<div class="msg error">Please fix the highlighted fields below.</div>{% endif %}
+  {% for stitle, help, names in form.sections %}
+  <section class="card form-section"><div class="form-section-h"><h2>{% if forloop.first %}2 · {% else %}3 · {% endif %}{{ stitle }}</h2>{% if help %}<p class="muted">{{ help }}</p>{% endif %}</div>
+    <div class="form-grid">{% for name in names %}{% with bf=form|field:name %}{% if bf %}{% include "console/_field.html" with bf=bf %}{% endif %}{% endwith %}{% endfor %}</div>
+  </section>{% endfor %}
+  <div class="note-box">The unit is held for {{ c.user.first_name }} while they pay the first amount (full price, reservation fee or down payment). You can then record the payment at the office or send a payment link from the order page.</div>
+  <div class="form-actions"><span class="grow"></span><a class="btn ghost" href="{% url 'agency:orders' %}">Cancel</a><button class="btn" type="submit">Create order</button></div>
+</form>
+{% endif %}
+{% endblock %}

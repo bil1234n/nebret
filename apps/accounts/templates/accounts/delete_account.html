@@ -1,22 +1,22 @@
 {% extends "accounts/_page.html" %}
 {% block title %}Delete your account{% endblock %}
-{% block heading %}Delete your Vacation Equb account{% endblock %}
+{% block heading %}Delete your Nebret Equb account{% endblock %}
 {% block sub %}<p>You can also do this in the app: Profile → Delete account.</p>{% endblock %}
 {% block content %}
 {% if done %}
 <div class="ok">
   <h2 style="margin-top:0">Request received</h2>
   <p>Your account is now suspended – you can't sign in and you won't get messages from us. Our team will review the request
-    and delete your personal data. If you are in an Equb or have an upcoming trip, we will contact you first to settle it.</p>
+    and delete your personal data. If you are in an Equb or are still paying for a purchase, we will contact you first to settle it.</p>
   <p class="muted">Changed your mind? Email <a href="mailto:{{ support_email }}">{{ support_email }}</a> from your registered details before we finish the review.</p>
 </div>
 {% else %}
 <h2>What happens</h2>
 <ul>
   <li>Your account is <b>suspended right away</b>: you can no longer sign in.</li>
-  <li>Our team reviews the request. If you have a running Equb place or an upcoming trip, we contact you to settle it first.</li>
-  <li>Once approved, we <b>delete</b> your name, phone number, email, ID and passport details and your notifications.</li>
-  <li>Payment, booking and Equb contribution records are <b>kept without your name</b>, because we must keep financial records.</li>
+  <li>Our team reviews the request. If you have a running Equb place, an order you are paying in installments or a handover waiting, we contact you to settle it first.</li>
+  <li>Once approved, we <b>delete</b> your name, phone number, email, ID and address details and your notifications.</li>
+  <li>Payment, order and Equb contribution records are <b>kept without your name</b>, because we must keep financial records.</li>
 </ul>
 <div class="card" style="margin-top:20px">
   <form method="post" novalidate>{% csrf_token %}

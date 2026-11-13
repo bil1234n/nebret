@@ -16,8 +16,8 @@ from .models import User, normalize_phone
 
 
 def _context(**extra):
-    return {"support_email": settings.VACATION["SUPPORT_EMAIL"], "company": "Vacation Equb",
-            "updated": settings.VACATION["PRIVACY_UPDATED"], "year": timezone.localdate().year, **extra}
+    return {"support_email": settings.NEBRET["SUPPORT_EMAIL"], "company": "Nebret Equb",
+            "updated": settings.NEBRET["PRIVACY_UPDATED"], "year": timezone.localdate().year, **extra}
 
 
 def privacy_policy(request):

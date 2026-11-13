@@ -131,10 +131,10 @@ def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
     out.append(f"{rules.block_at} unpaid rounds keep you out of draws until you catch up; "
                f"{rules.suspend_at} unpaid rounds can lead to your place being cancelled.")
     if g.draw_type == EqubGroup.DrawType.MANUAL:
-        out.append("vacation Travel runs each round's draw on the draw date and announces the winner in the app.")
+        out.append("Nebret Equb runs each round's draw on the draw date and announces the winner in the app.")
     else:
         out.append("A provably-fair random draw runs automatically on each draw date – you can verify it in the app.")
-    basis = ("guaranteed by vacation Travel" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
+    basis = ("guaranteed by Nebret Equb" if g.payout_basis == EqubGroup.PayoutBasis.FULL_POT
              else "from what was collected by draw day")
     if g.payment_rounds:
         out.append(f"Each winner receives the price per person – {money(g.price_per_person)} ETB – "
@@ -142,8 +142,10 @@ def rules_summary(g: EqubGroup, rules: EqubSettings) -> list[str]:
     else:
         out.append(f"Every member wins once. Each winner receives about {money(g.payout_per_winner)} ETB ({basis}), "
                    f"after a {g.service_fee_percent.normalize()}% service fee.")
+    out.append("Winners can use their payout to buy a car, home, plot or e-bike in the Nebret marketplace, or take it "
+               "in cash.")
     out.append(f"You can pay up to {rules.max_advance_rounds} rounds ahead; early payments are used automatically.")
-    out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from vacation Travel.")
+    out.append("Before the Equb starts you can leave freely. Once it is running, leaving needs approval from Nebret Equb.")
     out += [line.strip() for line in (g.rules_text or "").splitlines() if line.strip()]
     return out
 
@@ -313,18 +315,18 @@ class EqubPayoutSerializer(serializers.ModelSerializer):
     group = serializers.CharField(source="round.group.name", read_only=True)
     group_slug = serializers.CharField(source="round.group.slug", read_only=True)
     round_number = serializers.IntegerField(source="round.number", read_only=True)
-    booking_reference = serializers.CharField(source="booking.reference", read_only=True, default=None)
+    order_reference = serializers.CharField(source="order.reference", read_only=True, default=None)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     class Meta:
         model = EqubPayout
         fields = ["id", "membership", "group", "group_slug", "round_number", "amount", "gross_amount", "fee_amount",
-                  "voucher_code", "status", "status_display", "booking_reference", "redeemed_at", "paid_out_at",
+                  "voucher_code", "status", "status_display", "order_reference", "redeemed_at", "paid_out_at",
                   "paid_out_method", "created_at"]
 
 
 class RedeemSerializer(serializers.Serializer):
-    booking_reference = serializers.CharField(max_length=6)
+    order_reference = serializers.CharField(max_length=10)
 
 
 class JoinByCodeSerializer(serializers.Serializer):

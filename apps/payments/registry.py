@@ -2,7 +2,7 @@
 Fulfilment registry: decouples the payments app from the business apps.
 
 Each business app registers what should happen when a payment for its purpose
-succeeds or fails, e.g. ``register("BOOKING", on_success=confirm_booking)``.
+succeeds or fails, e.g. ``register("ORDER", on_success=on_order_paid)``.
 """
 from __future__ import annotations
 

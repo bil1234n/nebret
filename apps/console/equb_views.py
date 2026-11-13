@@ -266,7 +266,7 @@ def equb_round(request, slug, number):
         ctx["in_draw"] = len(rnd.draw.eligible_memberships)
         ctx["snapshot"] = rnd.draw.pool_snapshot or {}
         ctx["verification"] = services.verify_draw(rnd)
-        ctx["payouts"] = rnd.payouts.select_related("membership__user", "booking")
+        ctx["payouts"] = rnd.payouts.select_related("membership__user", "order")
     elif hasattr(rnd, "draw"):
         ctx["pool"] = services.draw_pool(rnd)
         ctx["in_draw"] = ctx["pool"]["eligible_count"]
@@ -426,7 +426,7 @@ def equb_member(request, pk):
         "nav": "equb", "m": m, "g": m.group, "s": standing, "schedule": schedule, "plan": plan,
         "payments": payments, "calls": m.call_logs.select_related("called_by")[:30],
         "terminations": m.terminations.select_related("terminated_by", "reinstated_by"), "exit": ops.exit_info(m, standing),
-        "payout": EqubPayout.objects.filter(membership=m).select_related("round", "booking").first(),
+        "payout": EqubPayout.objects.filter(membership=m).select_related("round", "order").first(),
         "outcomes": CallLog.Outcome.choices, "reasons": Termination.Reason.choices, "rules": rules,
         "methods": [(k, v) for k, v in EqubPayment.Method.choices if k in EqubPayment.OFFICE_METHODS],
         "today": timezone.localdate(), "active_termination": m.terminations.filter(reinstated_at__isnull=True).first(),
@@ -443,7 +443,7 @@ def equb_collections(request):
     members, standings = reports.live_standings(group_id=int(pool) if pool.isdigit() else None, search=q)
     rows = reports.debtors(members, standings, band=band, only_never_paid=never)
     if request.GET.get("export") == "csv":
-        return _csv(f"vacation-equb-arrears-{timezone.localdate()}.csv",
+        return _csv(f"nebret-equb-arrears-{timezone.localdate()}.csv",
                     ["Member", "Phone", "Equb", "Place", "Standing", "Missed rounds", "Days overdue", "Arrears (ETB)",
                      "Paid (ETB)", "Credit (ETB)", "Won", "Last called"],
                     [[r["m"].user.full_name, r["m"].user.phone, r["m"].group.name, r["m"].position, r["s"].status_label,
@@ -700,12 +700,12 @@ def equb_draws(request):
                     rows.append([timezone.localtime(d.executed_at).strftime("%Y-%m-%d %H:%M"), d.round.group.name,
                                  d.round.number, p.membership.user.full_name, p.membership.user.phone, p.amount,
                                  p.get_status_display(), d.get_mode_display(), len(d.eligible_memberships), p.voucher_code])
-            return _csv(f"vacation-equb-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
+            return _csv(f"nebret-equb-draws-{today}.csv", ["Drawn", "Equb", "Round", "Winner", "Phone", "Won (ETB)",
                                                           "Payout", "Mode", "Entries", "Voucher"], rows)
         ctx.update(page=_pager(request, qs), mode=mode)
     elif tab == "payouts":
         status = request.GET.get("status", "")
-        qs = EqubPayout.objects.select_related("membership__user", "round__group", "booking", "paid_out_by").order_by("-created_at")
+        qs = EqubPayout.objects.select_related("membership__user", "round__group", "order", "paid_out_by").order_by("-created_at")
         if status:
             qs = qs.filter(status=status)
         if pool.isdigit():
@@ -997,7 +997,7 @@ def equb_memberships(request):
     if request.GET.get("export") == "csv":
         items = list(qs)
         stand = st.standings_for(items)
-        return _csv(f"vacation-equb-memberships-{timezone.localdate()}.csv",
+        return _csv(f"nebret-equb-memberships-{timezone.localdate()}.csv",
                     ["Package", "Group", "Position", "Member", "Phone", "Contribution (ETB)", "Status", "Standing",
                      "Paid (ETB)", "Arrears (ETB)", "Won round", "Joined"],
                     ([m.group.equb_package.name if m.group.equb_package_id else "", m.group.name, m.position,

@@ -40,7 +40,7 @@ class PushTokenView(APIView):
 
 class DeleteAccountView(APIView):
     """
-    ``POST {"reason": "..."}`` – ask Vacation Equb to delete this account.
+    ``POST {"reason": "..."}`` – ask Nebret Equb to delete this account.
 
     The account is suspended at once (sign-in stops working) and waits for staff approval in the console.
     """

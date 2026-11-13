@@ -14,7 +14,7 @@ from django.utils import timezone
 from apps.accounts.models import User, normalize_phone, validate_phone
 from apps.equb.models import EqubGroup, EqubPackage, EqubSettings, GroupEqub, duration_end
 from apps.luckydraw.models import CrowdfundingCampaign, Giveaway
-from apps.travel.models import AircraftType, Airport, BaggageOption, FareClass, Flight, TravelPackage
+from apps.market.models import Category, Listing
 
 
 class StyledMixin:
@@ -46,124 +46,41 @@ class StyledMixin:
                     self.fields[n].help_text = reason
 
 
-# ----------------------------------------------------------------- packages
-class PackageForm(StyledMixin, forms.ModelForm):
-    includes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 5, "placeholder": "Umrah visa\nReturn flight ADD–JED\n4★ hotel near Haram"}),
-                               help_text="One item per line.")
-
-    sections = [
-        ("Package", "What customers see first in the app.", ["name", "category", "summary", "description", "image_url"]),
-        ("Destination & dates", "", ["destination_city", "destination_country", "departure_date", "return_date", "duration_days"]),
-        ("Price & capacity", "Prices are in Birr.", ["price", "deposit_amount", "capacity"]),
-        ("What's included", "", ["includes", "hotel_name", "hotel_stars", "outbound_flight", "return_flight"]),
-        ("Visibility", "", ["is_featured", "is_active"]),
-    ]
+# ----------------------------------------------------------------- marketplace
+class CategoryForm(StyledMixin, forms.ModelForm):
+    spec_text = forms.CharField(
+        label="Spec fields", required=False, widget=forms.Textarea(attrs={"rows": 6, "placeholder": "bedrooms | Bedrooms\narea_m2 | Area | m²"}),
+        help_text="One per line: key | label | unit (unit optional). Shown first on every listing in this category.")
+    sections = [("Category", "", ["group", "name", "name_am", "name_ar", "icon", "description", "sort_order", "is_active"]),
+                ("Specs", "", ["spec_text"])]
 
     class Meta:
-        model = TravelPackage
-        fields = ["name", "category", "summary", "description", "image_url", "destination_city", "destination_country",
-                  "departure_date", "return_date", "duration_days", "price", "deposit_amount", "capacity", "includes",
-                  "hotel_name", "hotel_stars", "outbound_flight", "return_flight", "is_featured", "is_active"]
-        labels = {"image_url": "Image URL", "is_featured": "Feature on the app home screen", "is_active": "Available for booking",
-                  "deposit_amount": "Deposit", "capacity": "Total places"}
-        help_texts = {"summary": "One line, shown on package cards."}
+        model = Category
+        fields = ["group", "name", "name_am", "name_ar", "icon", "description", "sort_order", "is_active"]
+        help_texts = {"icon": "Ionicons name used by the app, e.g. car-sport, home, business, map, bicycle, tv."}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
-            self.initial["includes"] = "\n".join(self.instance.includes or [])
-        upcoming = Flight.objects.filter(departure_time__gt=timezone.now()).select_related("origin", "destination")
-        for f in ("outbound_flight", "return_flight"):
-            self.fields[f].queryset = upcoming
-            self.fields[f].required = False
+            self.initial["spec_text"] = "\n".join(
+                " | ".join(x for x in (s.get("key", ""), s.get("label", ""), s.get("unit", "")) if x)
+                for s in (self.instance.spec_fields or []))
 
-    def clean_includes(self):
-        return [line.strip(" •-") for line in self.cleaned_data["includes"].splitlines() if line.strip()]
-
-    def clean(self):
-        d = super().clean()
-        if d.get("departure_date") and d.get("return_date") and d["return_date"] <= d["departure_date"]:
-            self.add_error("return_date", "Return must be after departure.")
-        if self.instance.pk and d.get("capacity") is not None and d["capacity"] < self.instance.seats_sold:
-            self.add_error("capacity", f"{self.instance.seats_sold} places are already sold.")
-        if d.get("hotel_stars") and not 1 <= d["hotel_stars"] <= 5:
-            self.add_error("hotel_stars", "Between 1 and 5.")
-        return d
-
-
-# ----------------------------------------------------------------- flights
-class FlightForm(StyledMixin, forms.ModelForm):
-    sections = [
-        ("Flight", "", ["airline_code", "airline_name", "flight_number", "aircraft", "status"]),
-        ("Route & schedule", "Times are Addis Ababa local time.", ["origin", "destination", "departure_time", "arrival_time", "is_international", "terminal", "gate"]),
-    ]
-
-    class Meta:
-        model = Flight
-        fields = ["airline_code", "airline_name", "flight_number", "aircraft", "status", "origin", "destination",
-                  "departure_time", "arrival_time", "is_international", "terminal", "gate"]
-        labels = {"aircraft": "Aircraft (seat layout)", "is_international": "International flight"}
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance.pk and self.instance.seats.exists():
-            self.disable("aircraft", reason="Seat map already generated; create a new flight to change aircraft.")
-
-    def clean(self):
-        d = super().clean()
-        if d.get("origin") and d.get("origin") == d.get("destination"):
-            self.add_error("destination", "Destination must differ from origin.")
-        if d.get("departure_time") and d.get("arrival_time") and d["arrival_time"] <= d["departure_time"]:
-            self.add_error("arrival_time", "Arrival must be after departure.")
-        return d
-
-
-class FareForm(StyledMixin, forms.ModelForm):
-    class Meta:
-        model = FareClass
-        fields = ["cabin", "code", "name", "base_fare", "taxes", "seats_allocated", "checked_baggage_kg",
-                  "cabin_baggage_kg", "change_fee", "refundable", "free_seat_selection"]
-        labels = {"code": "Booking code", "name": "Fare name", "base_fare": "Base fare (ETB)", "taxes": "Taxes (ETB)",
-                  "seats_allocated": "Seats", "checked_baggage_kg": "Checked bag (kg)", "cabin_baggage_kg": "Cabin bag (kg)",
-                  "change_fee": "Change fee (ETB)", "refundable": "Refundable", "free_seat_selection": "Free seat selection"}
-
-
-def cabin_capacity(aircraft: AircraftType) -> dict:
-    cap = {}
-    for block in aircraft.layout:
-        n = (block["rows"][1] - block["rows"][0] + 1) * len(block["letters"].replace("|", ""))
-        cap[block["cabin"]] = cap.get(block["cabin"], 0) + n
-    return cap
-
-
-class BaseFareFormSet(forms.BaseInlineFormSet):
-    aircraft = None
-
-    def clean(self):
-        super().clean()
-        if any(self.errors):
-            return
-        alive = [f for f in self.forms if f.cleaned_data and not f.cleaned_data.get("DELETE")]
-        if not alive:
-            raise ValidationError("Add at least one fare class.")
-        codes = [f.cleaned_data["code"].upper() for f in alive]
-        if len(codes) != len(set(codes)):
-            raise ValidationError("Each fare needs a unique booking code (e.g. K, Y, J).")
-        if self.aircraft:
-            cap = cabin_capacity(self.aircraft)
-            used = {}
-            for f in alive:
-                used[f.cleaned_data["cabin"]] = used.get(f.cleaned_data["cabin"], 0) + f.cleaned_data["seats_allocated"]
-                if f.instance.pk and f.cleaned_data["seats_allocated"] < f.instance.seats_sold:
-                    raise ValidationError(f"{f.cleaned_data['name']}: {f.instance.seats_sold} seats already sold.")
-            for cabin, n in used.items():
-                if cabin not in cap:
-                    raise ValidationError(f"{self.aircraft.name} has no {cabin.title()} cabin.")
-                if n > cap[cabin]:
-                    raise ValidationError(f"{cabin.title()} fares allocate {n} seats but the aircraft has {cap[cabin]}.")
-
-
-FareFormSet = forms.inlineformset_factory(Flight, FareClass, form=FareForm, formset=BaseFareFormSet, extra=0, can_delete=True)
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        rows = []
+        for line in (self.cleaned_data.get("spec_text") or "").splitlines():
+            parts = [p.strip() for p in line.split("|")]
+            if parts and parts[0]:
+                row = {"key": parts[0].lower().replace(" ", "_"), "label": parts[1] if len(parts) > 1 and parts[1]
+                       else parts[0].replace("_", " ").capitalize()}
+                if len(parts) > 2 and parts[2]:
+                    row["unit"] = parts[2]
+                rows.append(row)
+        obj.spec_fields = rows
+        if commit:
+            obj.save()
+        return obj
 
 
 # ----------------------------------------------------------------- equb
@@ -181,7 +98,7 @@ class EqubPackageForm(StyledMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["name"].widget.attrs.update(placeholder="e.g. Umrah, Hajj, Dubia")
+        self.fields["name"].widget.attrs.update(placeholder="e.g. Car Equb, Apartment Equb, E-bike Equb")
         self.fields["terms_content"].widget.attrs.update(rows=16, **{"data-terms-editor": "1"})
 
 
@@ -234,7 +151,7 @@ class EqubForm(StyledMixin, forms.ModelForm):
                                                f"{default_fee:g}% from Equb rules.")
         f["max_members"].widget.attrs.update(min=2, max=10000, step=1)
         f["rounds_drawn"].widget.attrs.update(min=1, max=10000, step=1, placeholder="One draw every round")
-        f["contribution_amount"].widget.attrs.update(placeholder="e.g. 70000")
+        f["contribution_amount"].widget.attrs.update(placeholder="e.g. 100000")
         f["price_per_person"].widget.attrs.update({"data-price": "1", "readonly": True})
         inst = self.instance
         amount = self.initial.get("contribution_amount") or (inst.contribution_amount if inst.pk else None)
@@ -406,8 +323,8 @@ class CustomerForm(StyledMixin, forms.ModelForm):
                                        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}))
     sections = [
         ("Profile", "", ["full_name", "phone", "email", "preferred_language", "date_of_birth", "is_active"]),
-        ("Travel documents", "Used to fill in passenger details when booking.",
-         ["national_id", "passport_number", "passport_expiry"]),
+        ("Buyer details", "Used on sale contracts and to fill in orders.",
+         ["national_id", "city", "address"]),
         ("Password", "Give the customer a password so they can sign in to the app with their phone number.",
          ["new_password", "confirm_password"]),
     ]
@@ -415,11 +332,10 @@ class CustomerForm(StyledMixin, forms.ModelForm):
     class Meta:
         model = User
         fields = ["full_name", "phone", "email", "preferred_language", "date_of_birth", "national_id",
-                  "passport_number", "passport_expiry", "is_active"]
+                  "city", "address", "is_active"]
         labels = {"full_name": "Full name", "phone": "Phone number", "preferred_language": "App language",
                   "is_active": "Account active"}
-        widgets = {"date_of_birth": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
-                   "passport_expiry": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")}
+        widgets = {"date_of_birth": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d")}
 
     def clean_phone(self):
         phone = normalize_phone(self.cleaned_data["phone"])
@@ -526,7 +442,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
 
     sections = [
         ("Campaign", "", ["title", "category", "story", "image_url", "is_featured"]),
-        ("Who is helped", "Donors see the beneficiary's name. Link their Vacation Equb account to notify them of each gift.",
+        ("Who is helped", "Donors see the beneficiary's name. Link their Nebret Equb account to notify them of each gift.",
          ["beneficiary_name", "beneficiary", "goal_amount"]),
         ("Giving", "Every gift goes 100% to the campaign. The platform fee is a separate amount the donor pays on top "
                    "(100 ETB gift + 5% = 105 ETB at checkout).", ["platform_fee_percent", "min_donation"]),
@@ -539,7 +455,7 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
                   "goal_amount", "platform_fee_percent", "min_donation", "starts_at", "ends_at", "status"]
         labels = {"goal_amount": "Goal (ETB)", "platform_fee_percent": "Platform fee added on top (%)",
                   "min_donation": "Smallest gift (ETB)", "is_featured": "Feature on the app home screen",
-                  "image_url": "Image URL", "beneficiary": "Beneficiary's vacation account", "story": "Story"}
+                  "image_url": "Image URL", "beneficiary": "Beneficiary's Nebret Equb account", "story": "Story"}
         widgets = {"starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
                    "ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")}
 
@@ -550,13 +466,13 @@ class CrowdfundingForm(StyledMixin, forms.ModelForm):
         f["beneficiary"].queryset = User.objects.filter(is_staff=False, is_active=True).order_by("full_name")
         f["beneficiary"].label_from_instance = lambda u: f"{u.full_name} · {u.phone}"
         f["beneficiary"].widget.attrs.update({"data-combo": "single", "data-placeholder": "Search a customer (optional)…"})
-        f["story"].widget.attrs.update(rows=5, placeholder="Who is being helped, and why this journey matters.")
-        f["title"].widget.attrs.update(placeholder="e.g. Help Ummi Fatuma reach Umrah")
+        f["story"].widget.attrs.update(rows=5, placeholder="Who is being helped, and why this matters.")
+        f["title"].widget.attrs.update(placeholder="e.g. A new home for the Abebe family")
         f["status"].choices = [c for c in CrowdfundingCampaign.Status.choices if c[0] != "FUNDED" or
                                (self.instance.pk and self.instance.status == "FUNDED")]
         if not self.instance.pk:
             self.initial.update(starts_at=timezone.localtime().replace(second=0, microsecond=0), status="LIVE",
-                                platform_fee_percent=Decimal(str(settings.VACATION["CROWDFUND_FEE_PERCENT"])), min_donation=10)
+                                platform_fee_percent=Decimal(str(settings.NEBRET["CROWDFUND_FEE_PERCENT"])), min_donation=10)
         elif self.instance.donations_count:
             self.disable("platform_fee_percent", reason="Fixed after the first gift, so every donor saw the same fee.")
 
@@ -575,22 +491,22 @@ class DisbursementForm(StyledMixin, forms.Form):
     amount = forms.DecimalField(label="Amount paid out (ETB)", min_value=1, max_digits=12, decimal_places=2)
     paid_to = forms.CharField(label="Paid to", max_length=150)
     method = forms.ChoiceField(label="Method", choices=[(x, x) for x in ("Bank transfer", "telebirr", "Cash",
-                                                                         "Paid to travel booking")])
+                                                                         "Paid to the seller (order)")])
     reference = forms.CharField(label="Reference", max_length=80, required=False)
     paid_on = forms.DateField(label="Date", widget=forms.DateInput(attrs={"type": "date"}))
     note = forms.CharField(label="Note", max_length=255, required=False)
 
 
 class GiveawayForm(StyledMixin, forms.ModelForm):
-    """Community Giveaway: 100% paid by vacation or a sponsor. Entry is free – earned only by inviting friends."""
+    """Community Giveaway: 100% paid by Nebret Equb or a sponsor. Entry is free – earned only by inviting friends."""
 
     sections = [
         ("Giveaway", "", ["title", "description", "image_url", "is_featured"]),
         ("Sponsor", "Who pays for the prize. Donations are never used for giveaways.",
          ["sponsor_type", "sponsor_name", "sponsor_note", "sponsor_logo_url"]),
-        ("Prize", "Winners receive this as credit on a booking or as paid Equb contributions.",
-         ["prize_type", "prize_title", "prize_value", "number_of_winners", "prize_package", "prize_equb_group"]),
-        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on vacation "
+        ("Prize", "Winners receive this as credit on a marketplace order or as paid Equb contributions.",
+         ["prize_type", "prize_title", "prize_value", "number_of_winners", "prize_listing", "prize_equb_group"]),
+        ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on Nebret Equb "
                          "with their referral code while the giveaway is running.", ["referrals_per_entry", "max_entries_per_user"]),
         ("Schedule", "", ["starts_at", "ends_at", "draw_at", "status"]),
     ]
@@ -598,11 +514,11 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
     class Meta:
         model = Giveaway
         fields = ["title", "description", "image_url", "is_featured", "sponsor_type", "sponsor_name", "sponsor_note",
-                  "sponsor_logo_url", "prize_type", "prize_title", "prize_value", "number_of_winners", "prize_package",
+                  "sponsor_logo_url", "prize_type", "prize_title", "prize_value", "number_of_winners", "prize_listing",
                   "prize_equb_group", "referrals_per_entry", "max_entries_per_user", "starts_at", "ends_at", "draw_at", "status"]
         labels = {"prize_value": "Prize value per winner (ETB)", "referrals_per_entry": "Friends who register = 1 free entry",
                   "max_entries_per_user": "Most entries per person", "is_featured": "Feature on the app home screen",
-                  "image_url": "Image URL", "sponsor_logo_url": "Sponsor logo URL", "prize_package": "Prize package",
+                  "image_url": "Image URL", "sponsor_logo_url": "Sponsor logo URL", "prize_listing": "Prize item (listing)",
                   "prize_equb_group": "Prize Equb group", "sponsor_type": "Paid by"}
         help_texts = {"max_entries_per_user": "Leave empty for no limit."}
         widgets = {k: forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")
@@ -610,15 +526,15 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["prize_package"].required = False
+        self.fields["prize_listing"].required = False
         self.fields["prize_equb_group"].required = False
-        self.fields["prize_package"].queryset = TravelPackage.objects.filter(is_active=True)
+        self.fields["prize_listing"].queryset = Listing.objects.exclude(status=Listing.Status.ARCHIVED)
         self.fields["status"].choices = [c for c in Giveaway.Status.choices if c[0] in ("SCHEDULED", "LIVE", "CANCELLED")]
         if not self.instance.pk:
             now = timezone.localtime().replace(second=0, microsecond=0)
             self.initial.update(starts_at=now, ends_at=now + timedelta(days=21), draw_at=now + timedelta(days=21, hours=1),
-                                referrals_per_entry=settings.VACATION["REFERRALS_PER_GIVEAWAY_ENTRY"], status="LIVE",
-                                sponsor_name="Vacation Equb")
+                                referrals_per_entry=settings.NEBRET["REFERRALS_PER_GIVEAWAY_ENTRY"], status="LIVE",
+                                sponsor_name="Nebret Equb")
         elif self.instance.entries_issued:
             self.disable("prize_type", "prize_value", "number_of_winners", "referrals_per_entry", "starts_at",
                          reason="Fixed after the first entry was earned.")
@@ -635,28 +551,9 @@ class GiveawayForm(StyledMixin, forms.ModelForm):
             self.add_error("draw_at", "The draw must be after referrals close.")
         if d.get("prize_type") == "EQUB_CONTRIBUTION" and not d.get("prize_equb_group"):
             self.add_error("prize_equb_group", "Choose the Equb whose contributions are paid.")
-        if d.get("prize_type") == "TRAVEL_PACKAGE" and not d.get("prize_package"):
-            self.add_error("prize_package", "Choose the package the winner travels on.")
+        if d.get("prize_type") == "LISTING" and not d.get("prize_listing"):
+            self.add_error("prize_listing", "Choose the marketplace item the winner receives.")
         return d
-
-
-class AirportForm(StyledMixin, forms.ModelForm):
-    sections = [("Airport", "", ["iata", "name", "city", "country", "timezone"])]
-
-    class Meta:
-        model = Airport
-        fields = ["iata", "name", "city", "country", "timezone"]
-        labels = {"iata": "IATA code"}
-        help_texts = {"timezone": "e.g. Africa/Addis_Ababa, Asia/Dubai"}
-
-
-class BaggageForm(StyledMixin, forms.ModelForm):
-    sections = [("Baggage option", "", ["code", "name", "weight_kg", "price", "international_only", "is_active"])]
-
-    class Meta:
-        model = BaggageOption
-        fields = ["code", "name", "weight_kg", "price", "international_only", "is_active"]
-        labels = {"price": "Price (ETB)", "is_active": "Offered to customers"}
 
 
 class StaffForm(StyledMixin, forms.Form):
@@ -701,7 +598,8 @@ class BannerForm(StyledMixin, forms.ModelForm):
     def clean(self):
         d = super().clean()
         link, value = d.get("link_type"), (d.get("link_value") or "").strip()
-        if link in ("EQUB_PACKAGE", "EQUB_GROUP", "TRAVEL_PACKAGE", "CAMPAIGN", "GIVEAWAY", "URL") and not value:
+        if link in ("EQUB_PACKAGE", "EQUB_GROUP", "CATEGORY", "LISTING", "COMPANY", "CAMPAIGN", "GIVEAWAY", "URL") \
+                and not value:
             self.add_error("link_value", "Say which one the slide should open.")
         if link == "URL" and value and not value.startswith(("https://", "http://")):
             self.add_error("link_value", "Web addresses start with https://")

@@ -179,7 +179,7 @@ def giveaway_detail(request, slug):
         "nav": "giveaways", "g": g, "charts": charts,
         "participants": g.participants.filter(referrals__gt=0).select_related("user").order_by("-entries", "-referrals")[:50],
         "close_to": g.participants.filter(entries=0, referrals__gt=0).count(),
-        "winners": g.winners.select_related("user", "claimed_booking"), "verification": cf.verify(g),
+        "winners": g.winners.select_related("user", "claimed_order"), "verification": cf.verify(g),
     })
 
 

@@ -1,0 +1,21 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}New order{% endblock %}{% block heading %}New order{% endblock %}{% block crumbs %}<a href="{% url 'console:orders' %}">Orders</a> / place an order for a customer{% endblock %}
+{% block content %}
+<form method="get" class="card">
+  <div class="card-h"><h2>1 · Customer</h2><span>Search by phone number</span></div>
+  <div class="toolbar" style="margin:0"><input class="grow" type="tel" name="phone" value="{{ phone }}" placeholder="e.g. 0911223344">
+    {% if request.GET.listing %}<input type="hidden" name="listing" value="{{ request.GET.listing }}">{% endif %}<button class="btn">Find</button></div>
+  {% if phone and not customer %}<p class="small muted">No customer with that number. Ask them to register in the app, or add them from a partner company's portal.</p>{% endif %}
+  {% if customer %}<p class="small">✓ <b>{{ customer.full_name }}</b> · {{ customer.phone }}{% if customer.national_id %} · ID {{ customer.national_id }}{% endif %}</p>{% endif %}
+</form>
+{% if customer %}
+<form method="post" class="form-page mt" novalidate>{% csrf_token %}<input type="hidden" name="phone" value="{{ customer.phone }}">
+  {% if form.errors %}<div class="msg error">Please fix the highlighted fields below.</div>{% endif %}
+  {% for stitle, help, names in form.sections %}
+  <section class="card form-section"><div class="form-section-h"><h2>{% if forloop.first %}2 · {% else %}3 · {% endif %}{{ stitle }}</h2></div>
+    <div class="form-grid">{% for name in names %}{% with bf=form|field:name %}{% if bf %}{% include "console/_field.html" with bf=bf %}{% endif %}{% endwith %}{% endfor %}</div>
+  </section>{% endfor %}
+  <div class="note-box">The unit is held for the customer while they make the first payment (full price, reservation fee or down payment). Record it on the order page or let them pay in the app.</div>
+  <div class="form-actions"><span class="grow"></span><a class="btn ghost" href="{% url 'console:orders' %}">Cancel</a><button class="btn" type="submit">Create order</button></div>
+</form>{% endif %}
+{% endblock %}

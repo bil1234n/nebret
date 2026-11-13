@@ -1,14 +1,21 @@
 {% extends "agencies/base.html" %}{% load console_tags %}
-{% block title %}Agency profile{% endblock %}{% block heading %}{{ agency.name }}{% endblock %}{% block crumbs %}Agency profile{% endblock %}
+{% block title %}Company profile{% endblock %}{% block heading %}{{ agency.name }}{% endblock %}{% block crumbs %}Company profile{% endblock %}
 {% block content %}
 <div class="grid g-2">
-  <div class="card"><div class="card-h"><h2>Agency</h2>{{ agency.status|status_badge:agency.get_status_display }}</div>
-    <dl class="kv"><dt>Phone</dt><dd>{{ agency.phone }}</dd><dt>Email</dt><dd>{{ agency.email|default:"—" }}</dd>
+  <div class="card"><div class="card-h"><h2>Company</h2>{{ agency.status|status_badge:agency.get_status_display }}</div>
+    <dl class="kv"><dt>Business</dt><dd>{{ agency.get_kind_display }}{% if agency.is_verified %} <span class="badge b-green">Verified</span>{% endif %}</dd>
+      <dt>Phone</dt><dd>{{ agency.phone }}</dd><dt>Email</dt><dd>{{ agency.email|default:"—" }}</dd>
       <dt>Address</dt><dd>{{ agency.address|default:"—" }}, {{ agency.city }}</dd><dt>Licence</dt><dd>{{ agency.license_number|default:"—" }}</dd><dt>TIN</dt><dd>{{ agency.tin|default:"—" }}</dd></dl></div>
   <div class="card"><div class="card-h"><h2>How you get paid</h2></div>
-    <dl class="kv"><dt>Platform fee</dt><dd>{{ agency.commission_percent|floatformat:"-2" }}% of every ticket and package you sell</dd>
+    <dl class="kv"><dt>Platform fee</dt><dd>{{ agency.commission_percent|floatformat:"-2" }}% of every payment on your listings</dd>
       <dt>Payout bank</dt><dd>{% if agency.account_number %}{{ agency.bank_name }} · {{ agency.account_name }} · {{ agency.account_number }}{% else %}Not set{% endif %}</dd>
-      <dt>Chapa split</dt><dd>{% if agency.chapa_subaccount_id %}<span class="badge b-green">On – Chapa pays your share at every payment</span>{% else %}<span class="badge b-grey">Off – Vacation Equb pays you out</span>{% endif %}</dd></dl>
-    <p class="small muted" style="margin-bottom:0">To change these details, contact Vacation Equb.</p></div>
+      <dt>Chapa split</dt><dd>{% if agency.chapa_subaccount_id %}<span class="badge b-green">On – Chapa pays your share at every payment</span>{% else %}<span class="badge b-grey">Off – Nebret Equb pays you out</span>{% endif %}</dd></dl>
+    <p class="small muted" style="margin-bottom:0">To change your bank details or commission, contact Nebret Equb.</p></div>
 </div>
+{% if me.can_manage %}
+<form method="post" class="form-page mt" novalidate>{% csrf_token %}
+  {% for stitle, help, names in form.sections %}<section class="card form-section"><div class="form-section-h"><h2>{{ stitle }}</h2>{% if help %}<p class="muted">{{ help }}</p>{% endif %}</div>
+    <div class="form-grid">{% for name in names %}{% with bf=form|field:name %}{% if bf %}{% include "console/_field.html" with bf=bf %}{% endif %}{% endwith %}{% endfor %}</div></section>{% endfor %}
+  <div class="form-actions"><span class="grow"></span><button class="btn" type="submit">Save profile</button></div>
+</form>{% endif %}
 {% endblock %}

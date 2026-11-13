@@ -25,11 +25,13 @@ class Banner(TimeStampedModel):
 
     class Link(models.TextChoices):
         NONE = "NONE", "Nothing – just a picture"
-        FLIGHTS = "FLIGHTS", "Flight search"
+        MARKET = "MARKET", "Marketplace (optional: a category group, e.g. HOMES)"
+        CATEGORY = "CATEGORY", "A marketplace category (slug)"
+        LISTING = "LISTING", "A listing (slug)"
+        COMPANY = "COMPANY", "A partner company (slug)"
         EQUB = "EQUB", "Equb tab"
         EQUB_PACKAGE = "EQUB_PACKAGE", "An Equb package (slug)"
         EQUB_GROUP = "EQUB_GROUP", "An Equb group (slug)"
-        TRAVEL_PACKAGE = "TRAVEL_PACKAGE", "A Hajj / Umrah / tour package (slug)"
         COMMUNITY = "COMMUNITY", "Community tab"
         CAMPAIGN = "CAMPAIGN", "A crowdfunding campaign (slug)"
         GIVEAWAY = "GIVEAWAY", "A giveaway (slug)"
@@ -72,7 +74,7 @@ class AppRelease(TimeStampedModel):
         help_text="Optional: versions older than this must update even when the type is Normal.")
     store_url = models.URLField(blank=True, help_text="Link to the app in the store. Empty = the default store link.")
     title = models.CharField(max_length=80, default="A new version is available")
-    message = models.TextField(blank=True, default="Update Vacation Equb to get the latest features and fixes.")
+    message = models.TextField(blank=True, default="Update Nebret Equb to get the latest features and fixes.")
     is_active = models.BooleanField(default=True)
 
     class Meta:

@@ -1,0 +1,25 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}Handover desk{% endblock %}{% block heading %}Handover desk{% endblock %}{% block crumbs %}Check the customer's pass, then hand over the keys{% endblock %}
+{% block content %}
+<form method="post" class="card">{% csrf_token %}
+  <div class="card-h"><h2>Check a handover pass</h2><span>Scan the QR in the customer's app or type the order reference</span></div>
+  <div class="toolbar" style="margin:0"><input class="grow mono" type="text" name="payload" value="{{ payload }}" placeholder="NEBRET:NBXXXXXX:… or NBXXXXXX" autofocus><button class="btn">Check</button></div>
+</form>
+{% if found %}
+<div class="card mt" style="border:2px solid {% if found.status == 'PAID' %}var(--gold){% else %}var(--line){% endif %}">
+  <div class="card-h"><h2>{{ found.reference }} · {{ found.user.full_name }}</h2>{{ found.status|status_badge:found.get_status_display }}</div>
+  <dl class="kv"><dt>Item</dt><dd>{{ found.title }}</dd><dt>Unit</dt><dd class="mono">{{ found.unit.code }}</dd>
+    <dt>Buyer on contract</dt><dd>{{ found.buyer_name }}{% if found.buyer_id_number %} · ID {{ found.buyer_id_number }}{% endif %}</dd>
+    <dt>Paid</dt><dd>{{ found.amount_paid|money }} of {{ found.total_amount|money }}</dd></dl>
+  {% if found.status == 'PAID' %}<p class="small">Fully paid – the pass is genuine. Check the buyer's ID, then record the handover.</p>
+    <a class="btn" href="{% url 'agency:order' found.reference %}">Open order to hand over →</a>
+  {% elif found.status == 'COMPLETED' %}<div class="msg warning">Already handed over on {{ found.handed_over_at|date:"d M Y" }}.</div>
+  {% else %}<div class="msg error">Not fully paid – {{ found.balance_due|money }} is still due. Do not hand over.</div>{% endif %}
+</div>{% endif %}
+<div class="card mt"><div class="card-h"><h2>Waiting for handover</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Item</th><th>Paid on</th><th>Hand over by</th></tr></thead><tbody>
+  {% for o in due %}<tr><td><a class="mono strong" href="{% url 'agency:order' o.reference %}">{{ o.reference }}</a></td><td>{{ o.user.full_name }}<div class="small muted">{{ o.contact_phone }}</div></td>
+    <td>{{ o.title }}</td><td class="small">{{ o.paid_in_full_at|date:"d M Y" }}</td><td class="small strong">{{ o.handover_due|date:"d M Y" }}</td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">Nothing waiting for handover.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

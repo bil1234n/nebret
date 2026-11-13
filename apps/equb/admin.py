@@ -76,7 +76,7 @@ class EqubDrawAdmin(admin.ModelAdmin):
 
 @admin.register(EqubPayout)
 class EqubPayoutAdmin(admin.ModelAdmin):
-    list_display = ["voucher_code", "membership", "round", "gross_amount", "fee_amount", "amount", "status", "booking",
+    list_display = ["voucher_code", "membership", "round", "gross_amount", "fee_amount", "amount", "status", "order",
                     "redeemed_at", "paid_out_at"]
     list_filter = ["status"]
     search_fields = ["voucher_code", "membership__user__phone"]

@@ -12,22 +12,24 @@
 {% block content %}
 {% if is_empty %}
 <div class="card getting-started">
-  <div><h2>Welcome to Vacation Equb — let's set up your catalogue</h2><p class="muted">Your system is clean. Add what customers can buy and join; the dashboard fills in automatically as bookings, contributions and entries come in.</p></div>
+  <div><h2>Welcome to Nebret Equb — let's set up your marketplace</h2><p class="muted">Your system is clean. Add what customers can buy and join; the dashboard fills in automatically as orders, installments and contributions come in.</p></div>
   <ol>
-    <li><a href="{% url 'console:settings' %}">Check airports &amp; baggage options</a></li>
-    <li><a href="{% url 'console:flight_add' %}">Schedule a flight</a> (seat map is generated for you)</li>
-    <li><a href="{% url 'console:package_add' %}">Create a Hajj, Umrah or tour package</a></li>
+    <li><a href="{% url 'console:settings' %}">Check the marketplace categories</a> (cars, apartments, plots, e-bikes…)</li>
+    <li><a href="{% url 'console:agency_add' %}">Add a partner company</a> – a real-estate developer, car dealer or e-bike seller</li>
+    <li><a href="{% url 'console:listing_add' %}">Publish a listing</a> with its stock and payment plans</li>
     <li><a href="{% url 'console:equb_package_add' %}">Create an Equb package</a>, then <a href="{% url 'console:equb_add' %}">open a group</a> from it, and <a href="{% url 'console:campaign_add' %}">start a crowdfunding campaign</a></li>
   </ol>
 </div>
 {% endif %}
 <div class="strip" style="margin-bottom:16px">
-  <div><div class="label">Departing in 24 h</div><div class="value">{{ attention.departures }} <small class="muted" style="font-size:13px;font-weight:600">flight{{ attention.departures|pluralize }}</small></div>
-    <div class="sub"><a href="{% url 'console:check_in' %}">{{ attention.checked_in }}/{{ attention.passengers }} checked in →</a></div></div>
-  <div><div class="label">Seats on hold</div><div class="value {% if attention.holds %}gold{% endif %}">{{ attention.holds }}</div>
-    <div class="sub"><a href="{% url 'console:bookings' %}?queue=pending">Awaiting payment →</a></div></div>
+  <div><div class="label">Waiting for first payment</div><div class="value {% if attention.holds %}gold{% endif %}">{{ attention.holds }}</div>
+    <div class="sub"><a href="{% url 'console:orders' %}?status=PENDING_PAYMENT">Units on hold →</a></div></div>
+  <div><div class="label">Ready for handover</div><div class="value">{{ attention.handovers }}</div>
+    <div class="sub"><a href="{% url 'console:handover' %}">{% if attention.handovers_late %}{{ attention.handovers_late }} late · {% endif %}handover desk →</a></div></div>
+  <div><div class="label">Installments overdue</div><div class="value {% if attention.overdue_installments %}red{% endif %}">{{ attention.overdue_installments }}</div>
+    <div class="sub"><a href="{% url 'console:installments' %}?tab=late">{{ attention.due_this_week }} due in 7 days →</a></div></div>
   <div><div class="label">Refunds to process</div><div class="value {% if attention.refunds %}red{% endif %}">{{ attention.refunds }}</div>
-    <div class="sub"><a href="{% url 'console:bookings' %}?queue=refund_due">Cancelled or paid late →</a></div></div>
+    <div class="sub"><a href="{% url 'console:orders' %}?queue=refund_due">Cancelled with money paid →</a></div></div>
   <div><div class="label">Equb members behind</div><div class="value {% if equb.members_in_arrears %}red{% endif %}">{{ equb.members_in_arrears }}</div>
     <div class="sub"><a href="{% url 'console:equb_collections' %}">{{ equb.arrears|compact }} ETB in arrears →</a></div></div>
   <div><div class="label">Exit &amp; termination</div><div class="value {% if attention.exits or attention.terminations %}gold{% endif %}">{{ attention.exits|add:attention.terminations }}</div>
@@ -46,30 +48,30 @@
 
 <div class="grid g-21 mt">
   <div class="card"><div class="card-h"><h2>Revenue by stream</h2><span>Successful payments per day</span></div><div class="chart-box lg"><canvas data-chart="revenue"></canvas></div></div>
-  <div class="card"><div class="card-h"><h2>Bookings by status</h2><span>All time</span></div><div class="chart-box lg"><canvas data-chart="booking_status"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Orders by status</h2><span>All time</span></div><div class="chart-box lg"><canvas data-chart="order_status"></canvas></div></div>
 </div>
 
 <div class="grid g-3 mt">
-  <div class="card"><div class="card-h"><h2>Top destinations</h2><span>Confirmed flight bookings</span></div><div class="chart-box"><canvas data-chart="destinations"></canvas></div></div>
-  <div class="card"><div class="card-h"><h2>Busiest upcoming flights</h2><span>% seats booked</span></div><div class="chart-box"><canvas data-chart="load"></canvas></div></div>
-  <div class="card"><div class="card-h"><h2>Payment providers</h2><span>Collected this period</span></div><div class="chart-box"><canvas data-chart="providers"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Sales by category</h2><span>Value of confirmed orders</span></div><div class="chart-box"><canvas data-chart="categories"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Best-selling listings</h2><span>Confirmed orders</span></div><div class="chart-box"><canvas data-chart="top_listings"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>How customers pay</h2><span>Payment plan of confirmed orders</span></div><div class="chart-box"><canvas data-chart="plans"></canvas></div></div>
 </div>
 
 <div class="grid g-2 mt">
   <div class="card"><div class="card-h"><h2>New customers</h2><span>Sign-ups per day</span></div><div class="chart-box"><canvas data-chart="signups"></canvas></div></div>
-  <div class="card"><div class="card-h"><h2>Crowdfunding gifts</h2><span>Tickets issued per day</span></div><div class="chart-box"><canvas data-chart="entries"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Payment providers</h2><span>Collected this period</span></div><div class="chart-box"><canvas data-chart="providers"></canvas></div></div>
 </div>
 
 <div class="grid g-2 mt">
   <div class="card">
-    <div class="card-h"><h2>Recent bookings</h2><a href="{% url 'console:bookings' %}">View all →</a></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Trip</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>
-    {% for b in recent_bookings %}<tr>
-      <td><a class="mono strong" href="{% url 'console:booking' b.reference %}">{{ b.reference }}</a></td>
-      <td>{{ b.user.full_name }}</td>
-      <td class="small">{% if b.flight %}{{ b.flight.origin.iata }} → {{ b.flight.destination.iata }}{% else %}{{ b.package.name|truncatechars:24 }}{% endif %}</td>
-      <td>{{ b.status|status_badge }}</td><td class="r num">{{ b.total_amount|money }}</td></tr>
-    {% empty %}<tr><td colspan="5" class="empty">No bookings yet.</td></tr>{% endfor %}
+    <div class="card-h"><h2>Recent orders</h2><a href="{% url 'console:orders' %}">View all →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Item</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>
+    {% for o in recent_orders %}<tr>
+      <td><a class="mono strong" href="{% url 'console:order' o.reference %}">{{ o.reference }}</a></td>
+      <td>{{ o.user.full_name }}</td>
+      <td class="small">{{ o.listing.title|truncatechars:28 }}<div class="muted">{{ o.get_plan_display }}</div></td>
+      <td>{{ o.status|status_badge:o.get_status_display }}</td><td class="r num">{{ o.total_amount|money }}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No orders yet.</td></tr>{% endfor %}
     </tbody></table></div>
   </div>
   <div class="card">

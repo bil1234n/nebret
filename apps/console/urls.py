@@ -4,7 +4,7 @@ from . import agency_views as ag
 from . import community_views as cv
 from . import equb_views as e
 from . import manage_views as m
-from . import travel_views as t
+from . import market_views as mk
 from . import views
 
 app_name = "console"
@@ -14,19 +14,17 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     path("profile/", views.profile, name="profile"),
     path("", views.dashboard, name="dashboard"),
-    path("bookings/", t.bookings, name="bookings"),
-    path("bookings/<str:reference>/", t.booking_detail, name="booking"),
-    path("check-in/", t.check_in_desk, name="check_in"),
-    path("flights/", views.flights, name="flights"),
-    path("flights/new/", m.flight_form, name="flight_add"),
-    path("flights/<int:pk>/", views.flight_detail, name="flight"),
-    path("flights/<int:pk>/manifest/", t.flight_manifest, name="flight_manifest"),
-    path("flights/<int:pk>/edit/", m.flight_form, name="flight_edit"),
-    path("flights/<int:pk>/delete/", m.flight_delete, name="flight_delete"),
-    path("packages/", views.packages, name="packages"),
-    path("packages/new/", m.package_form, name="package_add"),
-    path("packages/<int:pk>/edit/", m.package_form, name="package_edit"),
-    path("packages/<int:pk>/delete/", m.package_delete, name="package_delete"),
+    path("orders/", mk.orders, name="orders"),
+    path("orders/new/", mk.sell, name="sell"),
+    path("orders/<str:reference>/", mk.order_detail, name="order"),
+    path("installments/", mk.installments, name="installments"),
+    path("handover/", mk.handover_desk, name="handover"),
+    path("listings/", mk.listings, name="listings"),
+    path("listings/new/", mk.listing_form, name="listing_add"),
+    path("listings/<int:pk>/", mk.listing_detail, name="listing"),
+    path("listings/<int:pk>/edit/", mk.listing_form, name="listing_edit"),
+    path("listings/<int:pk>/delete/", mk.listing_delete, name="listing_delete"),
+    path("inquiries/", mk.inquiries, name="inquiries"),
     path("equb/packages/", e.equb_packages, name="equb_packages"),
     path("equb/packages/new/", m.equb_package_form, name="equb_package_add"),
     path("equb/packages/<slug:slug>/", e.equb_package_detail, name="equb_package"),
@@ -66,10 +64,10 @@ urlpatterns = [
     path("lucky-draws/", cv.old_lucky_redirect),
     path("lucky-draws/<slug:slug>/", cv.old_lucky_redirect),
     path("payments/", views.payments, name="payments"),
-    path("agencies/", ag.agencies, name="agencies"),
-    path("agencies/new/", ag.agency_form, name="agency_add"),
-    path("agencies/<int:pk>/", ag.agency_detail, name="agency"),
-    path("agencies/<int:pk>/edit/", ag.agency_form, name="agency_edit"),
+    path("companies/", ag.agencies, name="agencies"),
+    path("companies/new/", ag.agency_form, name="agency_add"),
+    path("companies/<int:pk>/", ag.agency_detail, name="agency"),
+    path("companies/<int:pk>/edit/", ag.agency_form, name="agency_edit"),
     path("customers/", views.users, name="users"),
     path("customers/deletion-requests/", views.deletion_requests, name="deletion_requests"),
     path("customers/<int:pk>/deletion/", views.deletion_decide, name="deletion_decide"),
@@ -84,10 +82,8 @@ urlpatterns = [
     path("app/updates/<int:pk>/", m.release_form, name="release_edit"),
     path("app/updates/<int:pk>/delete/", m.release_delete, name="release_delete"),
     path("settings/equb-rules/", e.equb_rules, name="equb_rules"),
-    path("settings/airports/new/", m.airport_form, name="airport_add"),
-    path("settings/airports/<int:pk>/", m.airport_form, name="airport_edit"),
-    path("settings/baggage/new/", m.baggage_form, name="baggage_add"),
-    path("settings/baggage/<int:pk>/", m.baggage_form, name="baggage_edit"),
+    path("settings/categories/new/", m.category_form, name="category_add"),
+    path("settings/categories/<int:pk>/", m.category_form, name="category_edit"),
     path("settings/staff/new/", m.staff_form, name="staff_add"),
     path("settings/staff/<int:pk>/toggle/", m.staff_toggle, name="staff_toggle"),
 ]

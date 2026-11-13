@@ -4,7 +4,7 @@ Account deletion – required by Google Play for apps that let people create an 
 1. ``request_deletion`` – the customer asks (in the app or on the public web page) and gives a reason.
    The account is suspended straight away: they can no longer sign in and nothing is sent to them.
 2. Staff review the request in the console (Customers → Deletion requests) and either
-   * ``approve_deletion`` – personal data is wiped. Payments, bookings and Equb records are kept (anonymised)
+   * ``approve_deletion`` – personal data is wiped. Payments, orders and Equb records are kept (anonymised)
      because they are financial records the business must keep; they no longer point to a person, or
    * ``restore_account`` – the request is declined and the customer can sign in again.
 """
@@ -19,16 +19,16 @@ REASON_MAX = 1000
 
 
 def deletion_blockers(user: User) -> dict:
-    """What staff should settle before approving: live Equb places and upcoming trips."""
+    """What staff should settle before approving: live Equb places, orders being paid and pending handovers."""
     from apps.equb.models import EqubMembership
-    from apps.travel.models import Booking
+    from apps.market.models import Order
 
     live = EqubMembership.objects.filter(user=user, status__in=EqubMembership.LIVE_STATUSES)
-    upcoming = Booking.objects.filter(user=user, status=Booking.Status.CONFIRMED).filter(
-        flight__departure_time__gt=timezone.now()).count() + Booking.objects.filter(
-        user=user, status=Booking.Status.CONFIRMED, package__departure_date__gte=timezone.localdate()).count()
-    return {"live_equbs": live.count(), "upcoming_trips": upcoming,
-            "unpaid_bookings": Booking.objects.filter(user=user, status=Booking.Status.PENDING_PAYMENT).count()}
+    orders = Order.objects.filter(user=user)
+    return {"live_equbs": live.count(),
+            "paying_orders": orders.filter(status__in=[Order.Status.RESERVED, Order.Status.INSTALLMENTS]).count(),
+            "pending_handovers": orders.filter(status=Order.Status.PAID).count(),
+            "unpaid_orders": orders.filter(status=Order.Status.PENDING_PAYMENT).count()}
 
 
 @transaction.atomic
@@ -67,27 +67,27 @@ def restore_account(user: User, by: User | None = None, note: str = "") -> User:
 @transaction.atomic
 def approve_deletion(user: User, by: User | None = None, note: str = "") -> User:
     """
-    Wipe the person's data. Financial records (payments, bookings, Equb contributions) stay for accounting but are
-    anonymised: the account keeps no name, phone, email, ID or passport details, and the phone number is freed so it
+    Wipe the person's data. Financial records (payments, orders, Equb contributions) stay for accounting but are
+    anonymised: the account keeps no name, phone, email, ID or address, and the phone number is freed so it
     can register again.
     """
+    from apps.market.models import Inquiry, Order
     from apps.notifications.models import Notification
-    from apps.travel.models import Booking, Passenger
 
     if user.deletion_status == User.DeletionStatus.DELETED:
         return user
-    bookings = Booking.objects.filter(user=user)
-    Passenger.objects.filter(booking__in=bookings).update(passport_number="", passport_expiry=None, phone="",
-                                                          special_requests="")
-    bookings.update(contact_phone="", contact_email="")
+    Order.objects.filter(user=user).update(contact_phone="", contact_email="", buyer_id_number="",
+                                           delivery_address="", note="")
+    Inquiry.objects.filter(user=user).update(phone="", message="(deleted)")
+    user.saved_listings.all().delete()
     Notification.objects.filter(user=user).delete()
 
     user.full_name = "Deleted user"
     user.email = ""
     user.national_id = ""
-    user.passport_number = ""
-    user.passport_expiry = None
     user.date_of_birth = None
+    user.city = ""
+    user.address = ""
     user.push_token = ""
     user.phone = f"+000{user.pk:012d}"   # unique placeholder (16 chars) – frees the real number
     user.set_unusable_password()

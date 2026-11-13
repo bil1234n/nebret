@@ -1,0 +1,62 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}{{ l.title }}{% endblock %}{% block heading %}{{ l.title }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:listings' %}">Listings</a> / {{ l.category.name }} · {% if l.company %}<a href="{% url 'console:agency' l.company_id %}">{{ l.company.name }}</a>{% else %}Nebret Equb{% endif %}{% endblock %}
+{% block actions %}{{ l.status|status_badge:l.get_status_display }}
+<form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="feature"><button class="btn ghost">{% if l.is_featured %}Unfeature{% else %}Feature{% endif %}</button></form>
+<form method="post" style="display:inline">{% csrf_token %}{% if l.status == 'DRAFT' or l.status == 'ARCHIVED' %}<input type="hidden" name="action" value="publish"><button class="btn ghost">Publish</button>{% else %}<input type="hidden" name="action" value="unpublish"><button class="btn ghost">Hide</button>{% endif %}</form>
+<a class="btn ghost" href="{% url 'console:listing_edit' l.pk %}">Edit</a><a class="btn" href="{% url 'console:sell' %}?listing={{ l.pk }}">New order</a>{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Price</div><div class="value">{{ l.price|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{% if l.compare_at_price %}was {{ l.compare_at_price|money }}{% else %}{{ l.get_condition_display }}{% endif %}</div></div>
+  <div class="card kpi"><div class="label">Available</div><div class="value">{{ stock.AVAILABLE }}</div><div class="sub">{{ stock.HELD }} held · {{ stock.RESERVED }} reserved · {{ stock.BLOCKED }} blocked</div></div>
+  <div class="card kpi gold"><div class="label">Sold</div><div class="value">{{ stock.SOLD }}</div><div class="sub">{{ sold_pct }}% of stock · {{ l.views }} view{{ l.views|pluralize }}</div></div>
+  <div class="card kpi"><div class="label">Collected</div><div class="value">{{ revenue|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">on live and completed orders</div></div>
+</div>
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Details</h2></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      {% if l.image_url %}<img src="{{ l.image_url }}" alt="" style="width:260px;max-width:100%;border-radius:12px;object-fit:cover">{% endif %}
+      <div style="flex:1;min-width:220px"><p style="margin-top:0">{{ l.summary }}</p>
+        <dl class="kv">{% if l.brand %}<dt>Brand</dt><dd>{{ l.brand }} {{ l.model_name }}</dd>{% endif %}{% if l.year %}<dt>Year</dt><dd>{{ l.year }}</dd>{% endif %}
+          <dt>Location</dt><dd>{{ l.area }}{% if l.area %}, {% endif %}{{ l.city }}</dd>
+          {% for k, v in l.specs.items %}<dt>{{ k|title }}</dt><dd>{{ v }}</dd>{% endfor %}</dl>
+        {% if l.features %}<div class="chips" style="margin-top:8px">{% for x in l.features %}<span class="chip">{{ x }}</span>{% endfor %}</div>{% endif %}</div>
+    </div>
+  </div>
+  <div class="card"><div class="card-h"><h2>How customers pay</h2></div>
+    <dl class="kv">
+      <dt>Full payment</dt><dd>{% if l.allow_full_payment %}Yes{% else %}No{% endif %}</dd>
+      <dt>Reservation</dt><dd>{% if l.allow_reservation and l.reservation_fee %}{{ l.reservation_fee|money }}, balance within {{ l.reservation_days }} days{% else %}No{% endif %}</dd>
+      <dt>Installments</dt><dd>{% if l.allow_installments %}{{ l.min_down_payment_percent|floatformat:"-2" }}% down ({{ l.min_down_payment|money }}), up to {{ l.max_installment_months }} months{% if l.finance_rate_percent %}, {{ l.finance_rate_percent|floatformat:"-2" }}% a year flat{% else %}, interest-free{% endif %}{% else %}No{% endif %}</dd>
+      <dt>Equb payout</dt><dd>{% if l.allow_equb_payout %}Accepted{% else %}No{% endif %}</dd>
+      <dt>Handover</dt><dd>within {{ l.handover_days }} days of full payment{% if l.delivery_available %} · delivery {{ l.delivery_fee|money }}{% endif %}</dd>
+      {% if l.warranty_months %}<dt>Warranty</dt><dd>{{ l.warranty_months }} months</dd>{% endif %}
+    </dl></div>
+</div>
+<div class="grid g-21 mt">
+  <div class="card"><div class="card-h"><h2>Units</h2><span>Each unit is one item a customer can buy</span></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Code</th><th>Label</th><th class="r">Price</th><th>Status</th><th></th></tr></thead><tbody>
+    {% for u in units %}<tr><td class="mono">{{ u.code }}</td>
+      <td><form method="post" style="display:flex;gap:6px">{% csrf_token %}<input type="hidden" name="action" value="rename"><input type="hidden" name="unit" value="{{ u.pk }}"><input type="text" name="label" value="{{ u.label }}" style="min-width:160px"><button class="btn ghost xs">Save</button></form></td>
+      <td class="r num">{{ u.price|money }}</td>
+      <td>{{ u.status|status_badge:u.get_status_display }}{% if u.held_by %}<div class="small muted">{{ u.held_by.full_name }}</div>{% endif %}</td>
+      <td class="r">{% if u.status == 'AVAILABLE' %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="block"><input type="hidden" name="unit" value="{{ u.pk }}"><button class="btn ghost xs">Block</button></form>{% elif u.status == 'BLOCKED' %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="unblock"><input type="hidden" name="unit" value="{{ u.pk }}"><button class="btn ghost xs">Put on sale</button></form>{% endif %}</td></tr>
+    {% empty %}<tr><td colspan="5" class="empty">No units yet – add stock so customers can buy.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div>
+    <form method="post" class="card" novalidate>{% csrf_token %}<input type="hidden" name="action" value="add_units">
+      <div class="card-h"><h2>Add stock</h2></div>
+      {% for bf in units_form %}{% include "console/_field.html" with bf=bf %}{% endfor %}
+      <button class="btn" type="submit">Add units</button></form>
+    <div class="card mt"><div class="card-h"><h2>Inquiries</h2><a class="small" href="{% url 'console:inquiries' %}">All →</a></div>
+      {% for i in inquiries %}<div style="padding:7px 0;border-bottom:1px solid var(--line)"><div class="small"><b>{{ i.get_kind_display }}</b> · {{ i.user.full_name }} · {{ i.status|status_badge:i.get_status_display }}</div><div class="small muted">{{ i.message|truncatechars:90 }}</div></div>
+      {% empty %}<div class="empty">No questions yet.</div>{% endfor %}</div>
+  </div>
+</div>
+<div class="card mt"><div class="card-h"><h2>Orders</h2></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Unit</th><th>Plan</th><th>Status</th><th class="r">Paid</th><th class="r">Total</th></tr></thead><tbody>
+  {% for o in orders %}<tr><td><a class="mono strong" href="{% url 'console:order' o.reference %}">{{ o.reference }}</a></td><td>{{ o.user.full_name }}</td><td class="mono small">{{ o.unit.code }}</td>
+    <td>{{ o.get_plan_display }}</td><td>{{ o.status|status_badge:o.get_status_display }}</td><td class="r num">{{ o.amount_paid|money }}</td><td class="r num strong">{{ o.total_amount|money }}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No orders yet.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

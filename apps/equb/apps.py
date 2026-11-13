@@ -4,7 +4,7 @@ from django.apps import AppConfig
 class EqubConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.equb"
-    verbose_name = "Travel Equb"
+    verbose_name = "Property Equb"
 
     def ready(self):
         from apps.payments import registry

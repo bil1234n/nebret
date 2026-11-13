@@ -56,7 +56,7 @@ class EqubSettings(models.Model):
     grace_days = models.PositiveSmallIntegerField(default=3, help_text="Days after the due date before a payment is late.")
     require_paid_to_draw = models.BooleanField(default=True, help_text="Only members paid up for the round enter its draw.")
     payout_basis = models.CharField(max_length=10, default="FULL_POT",
-                                    choices=[("FULL_POT", "Full pot – Vacation Equb guarantees the payout"),
+                                    choices=[("FULL_POT", "Full pot – Nebret Equb guarantees the payout"),
                                              ("COLLECTED", "Only what was collected by draw day")],
                                     help_text="What each winner receives.")
     auto_start_when_full = models.BooleanField(default=True, help_text="Start an Equb as soon as all its places are taken.")
@@ -208,7 +208,10 @@ class EqubPackage(TimeStampedModel):
 
 
 class EqubGroup(TimeStampedModel):
-    """A rotating savings circle (ዕቁብ) created from an Equb package."""
+    """
+    A rotating savings circle (ዕቁብ) created from an Equb package. On Nebret Equb each winner's payout can be
+    spent straight on a car, house, apartment, plot or e-bike in the marketplace (or paid out in cash).
+    """
 
     class Frequency(models.TextChoices):
         DAILY = "DAILY", "Daily"
@@ -229,7 +232,7 @@ class EqubGroup(TimeStampedModel):
         CANCELLED = "CANCELLED", "Cancelled"
 
     class PayoutBasis(models.TextChoices):
-        FULL_POT = "FULL_POT", "Full pot – Vacation Equb guarantees the payout"
+        FULL_POT = "FULL_POT", "Full pot – Nebret Equb guarantees the payout"
         COLLECTED = "COLLECTED", "Only what was collected by draw day"
 
     equb_package = models.ForeignKey(EqubPackage, null=True, blank=True, on_delete=models.PROTECT,
@@ -530,7 +533,7 @@ class GroupEqub(TimeStampedModel):
 
 class GroupEqubInvite(TimeStampedModel):
     """
-    The owner asks a vacation customer (found by phone number) to join the group. Nothing happens until the
+    The owner asks a Nebret Equb customer (found by phone number) to join the group. Nothing happens until the
     person accepts; then they get their own place in the Equb and pay their own contributions.
     """
 
@@ -710,7 +713,7 @@ class EqubDraw(TimeStampedModel):
 class EqubPayout(TimeStampedModel):
     class Status(models.TextChoices):
         ISSUED = "ISSUED", "Issued – ready to redeem"
-        REDEEMED = "REDEEMED", "Redeemed on a booking"
+        REDEEMED = "REDEEMED", "Used to buy a property / product"
         PAID_OUT = "PAID_OUT", "Paid out in cash"
 
     round = models.ForeignKey(EqubRound, on_delete=models.CASCADE, related_name="payouts")
@@ -720,7 +723,8 @@ class EqubPayout(TimeStampedModel):
     fee_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     voucher_code = models.CharField(max_length=12, unique=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ISSUED)
-    booking = models.ForeignKey("travel.Booking", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    order = models.ForeignKey("market.Order", null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+                              help_text="The marketplace order this payout was used on")
     redeemed_at = models.DateTimeField(null=True, blank=True)
     paid_out_at = models.DateTimeField(null=True, blank=True)
     paid_out_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,

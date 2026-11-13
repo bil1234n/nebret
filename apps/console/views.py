@@ -1,5 +1,5 @@
 """
-Vacation Equb staff console — a server-rendered web dashboard for operations staff.
+Nebret Equb staff console — a server-rendered web dashboard for operations staff.
 
 Every page is staff-only. Charts are rendered client-side with Chart.js from a
 single JSON config emitted per page (see ``static/console/console.js``).
@@ -24,20 +24,24 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User, normalize_phone
 from apps.accounts.services import approve_deletion, deletion_blockers, restore_account
-from apps.core.exceptions import BusinessRuleError
 from apps.equb.models import Contribution, EqubGroup, EqubMembership, EqubRound
 from apps.luckydraw.models import CrowdfundingCampaign, Donation, Giveaway, GiveawayEntry, GiveawayWinner
+from apps.market.models import Category, Inquiry, Installment, Listing, ListingUnit, Order
 from apps.payments.models import PaymentTransaction
-from apps.travel.models import Booking, Flight, Seat, Ticket, TravelPackage
-from apps.travel.services.pricing import current_fare
+
 from . import forms as f
 
 PAID = PaymentTransaction.Status.SUCCESS
-BOOKING_STATUS_ORDER = [("CONFIRMED", "Confirmed"), ("PENDING_PAYMENT", "Awaiting payment"), ("CANCELLED", "Cancelled"),
-                        ("REFUNDED", "Refunded"), ("EXPIRED", "Expired (unpaid)")]
-BOOKING_STATUS_COLORS = {"CONFIRMED": "#0F382B", "PENDING_PAYMENT": "#C9A227", "CANCELLED": "#C0392B",
-                         "REFUNDED": "#E8A598", "EXPIRED": "#B7C4BE"}
+ORDER_STATUS_ORDER = [("PENDING_PAYMENT", "Awaiting first payment"), ("RESERVED", "Reserved"),
+                      ("INSTALLMENTS", "Paying installments"), ("PAID", "Paid – awaiting handover"),
+                      ("COMPLETED", "Handed over"), ("CANCELLED", "Cancelled"), ("EXPIRED", "Expired"),
+                      ("DEFAULTED", "Defaulted"), ("REFUNDED", "Refunded")]
+ORDER_STATUS_COLORS = {"PENDING_PAYMENT": "#C9A227", "RESERVED": "#E6C766", "INSTALLMENTS": "#3E8E6C", "PAID": "#1B4D3E",
+                       "COMPLETED": "#0F382B", "CANCELLED": "#C0392B", "EXPIRED": "#B7C4BE", "DEFAULTED": "#8E2A20",
+                       "REFUNDED": "#E8A598"}
+GROUP_COLORS = {"VEHICLES": "#0F382B", "HOMES": "#3E8E6C", "LAND": "#C9A227", "ELECTRONICS": "#8FBFA8"}
 PURPOSE_LABELS = dict(PaymentTransaction.Purpose.choices)
+SALES_PURPOSES = ("ORDER", "INSTALLMENT")
 PER_PAGE = 25
 
 
@@ -53,7 +57,7 @@ def staff_required(view):
             if staff_for(request.user):
                 return redirect("agency:dashboard")
             logout(request)
-            messages.error(request, "The console is for Vacation Equb staff accounts only.")
+            messages.error(request, "The console is for Nebret Equb staff accounts only.")
             return redirect("console:login")
         return view(request, *args, **kwargs)
     return wrapper
@@ -108,14 +112,15 @@ def login_view(request):
         elif not user.is_staff and staff_for(user):
             login(request, user)
             nxt = request.GET.get("next", "")
-            return redirect(nxt if nxt.startswith("/agency/") else "agency:dashboard")
+            return redirect(nxt if nxt.startswith("/company/") else "agency:dashboard")
         elif not user.is_staff:
-            error = "This account does not have staff access or agency access."
+            error = "This account does not have staff access or company access."
         else:
             login(request, user)
             nxt = request.GET.get("next", "")
             return redirect(nxt if nxt.startswith("/console/") else "console:dashboard")
-    return render(request, "console/login.html", {"error": error, "phone": request.POST.get("phone", "")})
+    return render(request, "console/login.html", {"error": error, "phone": request.POST.get("phone", ""),
+                                                  "debug": settings.DEBUG})
 
 
 @require_POST
@@ -144,6 +149,7 @@ def profile(request):
             return redirect("console:profile")
     activity = {
         "draws_run": EqubRound.objects.filter(draw__executed_by=user).count(),
+        "handovers": Order.objects.filter(handed_over_by=user).count(),
         "last_login": user.last_login,
         "joined": user.date_joined,
     }
@@ -166,84 +172,108 @@ def dashboard(request):
 
     revenue = paid.filter(completed_at__gte=since).aggregate(s=net)["s"] or 0
     revenue_prev = paid.filter(completed_at__gte=prev_since, completed_at__lt=since).aggregate(s=net)["s"] or 0
-    confirmed = Booking.objects.filter(status="CONFIRMED", confirmed_at__gte=since).count()
-    confirmed_prev = Booking.objects.filter(status="CONFIRMED", confirmed_at__gte=prev_since, confirmed_at__lt=since).count()
+    sold = Order.objects.filter(confirmed_at__gte=since).exclude(status__in=["CANCELLED", "REFUNDED"])
+    sold_prev = Order.objects.filter(confirmed_at__gte=prev_since, confirmed_at__lt=since).exclude(
+        status__in=["CANCELLED", "REFUNDED"])
+    gmv = sold.aggregate(s=Sum("total_amount"))["s"] or 0
     customers = User.objects.filter(is_staff=False)
     total_customers = customers.count()
     new_customers = customers.filter(date_joined__gte=since).count()
     equb_saved = Contribution.objects.filter(status="PAID", paid_at__gte=since).aggregate(s=Sum("amount"))["s"] or 0
     gifts = Donation.objects.filter(status="PAID", paid_at__gte=since).aggregate(s=Sum("amount"), f=Sum("fee_amount"))
     crowd_raised, crowd_fees = gifts["s"] or 0, gifts["f"] or 0
-    rate = Decimal(str(settings.VACATION["COMPANY_PROFIT_PERCENT"]))
-    profit = (Decimal(revenue) * rate / 100).quantize(Decimal("0.01"))
-    profit_prev = Decimal(revenue_prev) * rate / 100
+    commission = paid.filter(completed_at__gte=since, agency__isnull=False).aggregate(s=Sum("platform_fee"))["s"] or 0
+    rate = Decimal(str(settings.NEBRET["COMPANY_PROFIT_PERCENT"]))
+    own_sales = paid.filter(completed_at__gte=since, purpose__in=SALES_PURPOSES, agency__isnull=True).aggregate(
+        s=net)["s"] or 0
+    profit = (Decimal(commission) + Decimal(own_sales) * rate / 100).quantize(Decimal("0.01"))
+    receivable = Installment.objects.filter(order__status="INSTALLMENTS").exclude(status__in=["PAID", "WAIVED"])
+    overdue = receivable.filter(status="LATE")
 
     kpis = [
-        {"label": "Revenue (net of refunds)", "value": revenue, "money": True, "growth": growth(revenue, revenue_prev), "icon": "cash", "dark": True},
-        {"label": "Confirmed bookings", "value": confirmed, "growth": growth(confirmed, confirmed_prev), "icon": "plane"},
-        {"label": "Customers", "value": f"{total_customers:,}", "sub": f"+{new_customers} joined in the last {period} days", "icon": "users"},
-        {"label": f"Company profit ({rate.normalize()}%)", "value": profit, "money": True, "growth": growth(profit, profit_prev),
-         "sub": f"{rate.normalize()}% of {revenue:,.0f} ETB revenue", "icon": "check", "gold": True},
-        {"label": "Equb savings", "value": equb_saved, "money": True, "sub": f"{EqubMembership.objects.exclude(status='LEFT').count()} active memberships", "icon": "people"},
-        {"label": "Crowdfunding raised", "value": crowd_raised, "money": True, "sub": f"+{crowd_fees:,.0f} ETB platform fees · {GiveawayEntry.objects.filter(created_at__gte=since).aggregate(s=Sum('count'))['s'] or 0} free giveaway entries", "icon": "gift"},
-        {"label": "Seats sold (upcoming)", "value": Seat.objects.filter(status="BOOKED", flight__departure_time__gt=timezone.now()).count(),
-         "sub": f"{Flight.objects.filter(departure_time__gt=timezone.now()).count()} scheduled flights", "icon": "seat"},
-        {"label": "Tickets issued", "value": Ticket.objects.filter(created_at__gte=since).count(), "sub": "e-tickets with signed QR", "icon": "ticket"},
+        {"label": "Revenue (net of refunds)", "value": revenue, "money": True, "growth": growth(revenue, revenue_prev),
+         "icon": "cash", "dark": True},
+        {"label": "Orders confirmed", "value": sold.count(), "growth": growth(sold.count(), sold_prev.count()),
+         "sub": f"{gmv:,.0f} ETB of property sold", "icon": "check"},
+        {"label": "Customers", "value": f"{total_customers:,}", "sub": f"+{new_customers} joined in the last {period} days",
+         "icon": "users"},
+        {"label": "Platform income", "value": profit, "money": True,
+         "sub": f"{commission:,.0f} ETB commission + {rate.normalize()}% of own sales", "icon": "cash", "gold": True},
+        {"label": "Installments receivable", "value": sum((i.amount_due for i in receivable), Decimal("0")),
+         "money": True, "sub": f"{overdue.count()} installment{'s' if overdue.count() != 1 else ''} overdue",
+         "icon": "ticket"},
+        {"label": "Equb savings", "value": equb_saved, "money": True,
+         "sub": f"{EqubMembership.objects.exclude(status='LEFT').count()} active memberships", "icon": "people"},
+        {"label": "Units for sale", "value": ListingUnit.objects.filter(status="AVAILABLE", listing__status="ACTIVE").count(),
+         "sub": f"{Listing.objects.live().count()} live listings", "icon": "seat"},
+        {"label": "Crowdfunding raised", "value": crowd_raised, "money": True,
+         "sub": f"+{crowd_fees:,.0f} ETB platform fees · {GiveawayEntry.objects.filter(created_at__gte=since).aggregate(s=Sum('count'))['s'] or 0} free giveaway entries",
+         "icon": "gift"},
     ]
 
     rev_by_purpose = [
-        {"label": PURPOSE_LABELS[p].split(" /")[0].split(" (")[0], "data": series(paid, "completed_at", net, days, {"purpose": p})}
-        for p in ("BOOKING", "EQUB_CONTRIBUTION")
+        {"label": label, "data": series(paid, "completed_at", net, days, {"purpose__in": purposes})}
+        for label, purposes in (("Marketplace", SALES_PURPOSES), ("Equb", ("EQUB_CONTRIBUTION",)))
     ]
-    status_counts = dict(Booking.objects.values_list("status").annotate(c=Count("id")))
+    status_counts = dict(Order.objects.values_list("status").annotate(c=Count("id")))
     provider_rows = paid.filter(completed_at__gte=since).values("provider").annotate(s=net).order_by("-s")
-    top_dest = (Booking.objects.filter(status="CONFIRMED", flight__isnull=False)
-                .values("flight__destination__city").annotate(c=Count("id")).order_by("-c")[:6])
-    upcoming = (Flight.objects.filter(departure_time__gt=timezone.now()).select_related("origin", "destination")
-                .annotate(total=Count("seats"), booked=Count("seats", filter=Q(seats__status="BOOKED")))
-                .filter(booked__gt=0).order_by("-booked", "departure_time")[:8])
+    by_group = (Order.objects.filter(confirmed_at__isnull=False).exclude(status__in=["CANCELLED", "REFUNDED"])
+                .values("listing__category__group").annotate(s=Sum("total_amount")).order_by("-s"))
+    group_labels = dict(Category.Group.choices)
+    top_listings = (Listing.objects.annotate(n=Count("orders", filter=Q(orders__confirmed_at__isnull=False)))
+                    .filter(n__gt=0).order_by("-n")[:8])
     signups = series(User.objects.all(), "date_joined", Count("id"), days)
-    entries = series(Donation.objects.filter(status="PAID"), "paid_at", Sum("amount"), days)
+    plans = dict(Order.objects.filter(confirmed_at__isnull=False).values_list("plan").annotate(c=Count("id")))
+    plan_labels = dict(Order.Plan.choices)
 
     charts = {
         "revenue": {"type": "bar", "stacked": True, "money": True, "labels": labels_for(days), "datasets": rev_by_purpose},
-        "booking_status": {"type": "doughnut", "labels": [label for key, label in BOOKING_STATUS_ORDER if key in status_counts],
-                           "datasets": [{"label": "Bookings",
-                                         "data": [status_counts[key] for key, _ in BOOKING_STATUS_ORDER if key in status_counts],
-                                         "colors": [BOOKING_STATUS_COLORS[key] for key, _ in BOOKING_STATUS_ORDER
-                                                    if key in status_counts]}]},
+        "order_status": {"type": "doughnut", "labels": [label for key, label in ORDER_STATUS_ORDER if key in status_counts],
+                         "datasets": [{"label": "Orders",
+                                       "data": [status_counts[key] for key, _ in ORDER_STATUS_ORDER if key in status_counts],
+                                       "colors": [ORDER_STATUS_COLORS[key] for key, _ in ORDER_STATUS_ORDER
+                                                  if key in status_counts]}]},
         "providers": {"type": "doughnut", "money": True, "labels": [r["provider"].title() for r in provider_rows],
                       "datasets": [{"label": "Collected", "data": [float(r["s"]) for r in provider_rows]}]},
-        "destinations": {"type": "bar", "horizontal": True, "labels": [r["flight__destination__city"] for r in top_dest],
-                         "datasets": [{"label": "Confirmed bookings", "data": [r["c"] for r in top_dest]}]},
-        "load": {"type": "bar", "suffix": "%", "labels": [f"{f.flight_number} {f.departure_time:%d/%m}" for f in upcoming],
-                 "datasets": [{"label": "Load factor", "data": [pct(f.booked, f.total) for f in upcoming], "color": "#3E8E6C"}]},
+        "categories": {"type": "doughnut", "money": True,
+                       "labels": [group_labels.get(r["listing__category__group"], "Other") for r in by_group],
+                       "datasets": [{"label": "Sold", "data": [float(r["s"]) for r in by_group],
+                                     "colors": [GROUP_COLORS.get(r["listing__category__group"], "#5B6F66")
+                                                for r in by_group]}]},
+        "top_listings": {"type": "bar", "horizontal": True, "labels": [lst.title[:30] for lst in top_listings],
+                         "datasets": [{"label": "Orders", "data": [lst.n for lst in top_listings], "color": "#3E8E6C"}]},
+        "plans": {"type": "doughnut", "labels": [plan_labels[p] for p in plans],
+                  "datasets": [{"label": "Orders", "data": list(plans.values())}]},
         "signups": {"type": "line", "labels": labels_for(days), "datasets": [{"label": "New customers", "data": signups}]},
-        "entries": {"type": "bar", "money": True, "labels": labels_for(days), "datasets": [{"label": "Crowdfunding gifts", "data": entries, "color": "#C9A227"}]},
     }
-    recent_bookings = Booking.objects.select_related("user", "flight__origin", "flight__destination", "package")[:8]
+    recent_orders = Order.objects.select_related("user", "listing", "unit")[:8]
     recent_payments = PaymentTransaction.objects.select_related("user")[:8]
     return render(request, "console/dashboard.html", {
         "nav": "dashboard", "kpis": kpis, "charts": charts, "period": period,
-        "recent_bookings": recent_bookings, "recent_payments": recent_payments,
+        "recent_orders": recent_orders, "recent_payments": recent_payments,
         "live_campaigns": CrowdfundingCampaign.objects.live()[:4], "live_giveaways": Giveaway.objects.live()[:4],
-        "is_empty": not (Flight.objects.exists() or TravelPackage.objects.exists() or EqubGroup.objects.exists()
-                         or CrowdfundingCampaign.objects.exists() or Giveaway.objects.exists()), "collecting_rounds": EqubRound.objects.filter(status="COLLECTING").select_related("group")[:5],
+        "is_empty": not (Listing.objects.exists() or EqubGroup.objects.exists() or CrowdfundingCampaign.objects.exists()
+                         or Giveaway.objects.exists()),
+        "collecting_rounds": EqubRound.objects.filter(status="COLLECTING").select_related("group")[:5],
         "equb": _equb_snapshot(), "attention": _attention(),
     })
 
 
 def _attention() -> dict:
-    """Today's work queues across travel and Equb – the strip at the top of the dashboard."""
+    """Today's work queues across the marketplace and Equb – the strip at the top of the dashboard."""
     from apps.equb.models import EqubMembership as M
-    from apps.travel.services import operations as travel_ops
 
-    departures = list(travel_ops.desk_departures(24))
+    now = timezone.now()
+    week = timezone.localdate() + timedelta(days=7)
     return {
-        "departures": len([f for f in departures if f.tickets]),
-        "passengers": sum(f.tickets for f in departures), "checked_in": sum(f.checked for f in departures),
-        "holds": Booking.objects.filter(status="PENDING_PAYMENT", expires_at__gt=timezone.now()).count(),
-        "refunds": travel_ops.refunds_due().count() + travel_ops.paid_after_expiry().count(),
+        "holds": Order.objects.filter(status="PENDING_PAYMENT", expires_at__gt=now).count(),
+        "handovers": Order.objects.filter(status="PAID").count(),
+        "handovers_late": Order.objects.filter(status="PAID", handover_due__lt=timezone.localdate()).count(),
+        "overdue_installments": Installment.objects.filter(status="LATE", order__status="INSTALLMENTS").count(),
+        "due_this_week": Installment.objects.filter(status="PENDING", order__status="INSTALLMENTS",
+                                                    due_date__lte=week).count(),
+        "refunds": Order.objects.filter(status__in=["CANCELLED", "DEFAULTED"], amount_paid__gt=F("refunded_amount")).count(),
+        "inquiries": Inquiry.objects.filter(status="OPEN", listing__company__isnull=True).count(),
         "exits": M.objects.filter(exit_requested_at__isnull=False, status__in=M.LIVE_STATUSES).count(),
         "terminations": M.objects.filter(termination_requested_at__isnull=False, status__in=M.LIVE_STATUSES).count()
         + _pending_rejoins(),
@@ -273,88 +303,10 @@ def _equb_snapshot() -> dict:
     return equb_reports.receivables_summary(members, standings)
 
 
-# --------------------------------------------------------------------------- flights & packages
-@staff_required
-def flights(request):
-    qs = (Flight.objects.select_related("origin", "destination", "aircraft")
-          .annotate(total=Count("seats", distinct=True), booked=Count("seats", filter=Q(seats__status="BOOKED"), distinct=True),
-                    held=Count("seats", filter=Q(seats__status="LOCKED"), distinct=True)))
-    dest, when = request.GET.get("destination", ""), request.GET.get("when", "upcoming")
-    if dest:
-        qs = qs.filter(destination__iata=dest)
-    qs = qs.filter(departure_time__gt=timezone.now()) if when == "upcoming" else qs.filter(departure_time__lte=timezone.now())
-    qs = qs.order_by("departure_time" if when == "upcoming" else "-departure_time")
-    pg = page(request, qs)
-    for f in pg:
-        f.load = pct(f.booked, f.total)
-    dests = Flight.objects.values_list("destination__iata", "destination__city").distinct().order_by("destination__city")
-    route_rev = (Booking.objects.filter(status="CONFIRMED", flight__isnull=False)
-                 .values("flight__destination__iata").annotate(s=Sum("total_amount")).order_by("-s")[:8])
-    charts = {"routes": {"type": "bar", "money": True, "labels": [r["flight__destination__iata"] for r in route_rev],
-                         "datasets": [{"label": "Revenue", "data": [float(r["s"]) for r in route_rev]}]}}
-    return render(request, "console/flights.html", {"nav": "flights", "page": pg, "dests": dests, "dest": dest, "when": when, "charts": charts})
-
-
-@staff_required
-def flight_detail(request, pk):
-    f = get_object_or_404(Flight.objects.select_related("origin", "destination", "aircraft"), pk=pk)
-    seats = list(f.seats.order_by("row", "letter"))
-    cabins = []
-    for block in f.aircraft.layout:
-        groups = block["letters"].split("|")
-        rows = []
-        by_rl = {(s.row, s.letter): s for s in seats if s.cabin == block["cabin"]}
-        for r in range(block["rows"][0], block["rows"][1] + 1):
-            cells = []
-            for gi, g in enumerate(groups):
-                if gi:
-                    cells.append(None)
-                cells += [by_rl.get((r, letter)) for letter in g]
-            rows.append({"row": r, "cells": cells})
-        cabins.append({"cabin": block["cabin"], "rows": rows})
-    fares = list(f.fares.all())
-    for fc in fares:
-        fc.now_price = current_fare(fc)
-        fc.load = pct(fc.seats_sold, fc.seats_allocated)
-    counts = {s: sum(1 for x in seats if x.status == s) for s in ("AVAILABLE", "BOOKED", "LOCKED", "BLOCKED")}
-    by_pos = {}
-    for s in seats:
-        if s.status == "BOOKED":
-            by_pos[s.get_position_display()] = by_pos.get(s.get_position_display(), 0) + 1
-    bookings_qs = f.bookings.select_related("user", "fare_class").annotate(pax=Count("passengers")).order_by("-created_at")[:30]
-    revenue = f.bookings.filter(status="CONFIRMED").aggregate(s=Sum("total_amount"))["s"] or 0
-    charts = {
-        "seats": {"type": "doughnut", "labels": ["Available", "Booked", "Held", "Blocked"],
-                  "datasets": [{"label": "Seats", "data": list(counts.values()), "colors": ["#B8D8C8", "#0F382B", "#C9A227", "#5B6F66"]}]},
-        "fares": {"type": "bar", "stacked": True, "labels": [fc.name for fc in fares], "datasets": [
-            {"label": "Sold", "data": [fc.seats_sold for fc in fares]},
-            {"label": "Remaining", "data": [fc.seats_left for fc in fares], "color": "#B8D8C8"}]},
-        "positions": {"type": "doughnut", "labels": list(by_pos), "datasets": [{"label": "Booked seats", "data": list(by_pos.values())}]},
-    }
-    return render(request, "console/flight_detail.html", {
-        "nav": "flights", "f": f, "cabins": cabins, "fares": fares, "counts": counts, "charts": charts,
-        "bookings": bookings_qs, "revenue": revenue, "load": pct(counts["BOOKED"], len(seats)),
-    })
-
-
-@staff_required
-def packages(request):
-    pkgs = list(TravelPackage.objects.annotate(
-        revenue=Sum("bookings__total_amount", filter=Q(bookings__status="CONFIRMED")),
-        confirmed=Count("bookings", filter=Q(bookings__status="CONFIRMED"))).order_by("departure_date"))
-    for p in pkgs:
-        p.load = pct(p.seats_sold, p.capacity)
-    charts = {"occupancy": {"type": "bar", "stacked": True, "labels": [p.name[:28] for p in pkgs], "datasets": [
-        {"label": "Places sold", "data": [p.seats_sold for p in pkgs]},
-        {"label": "Places left", "data": [p.seats_left for p in pkgs], "color": "#B8D8C8"}]},
-        "revenue": {"type": "doughnut", "money": True, "labels": [p.get_category_display() for p in pkgs],
-                    "datasets": [{"label": "Revenue", "data": [float(p.revenue or 0) for p in pkgs]}]}}
-    return render(request, "console/packages.html", {"nav": "packages", "pkgs": pkgs, "charts": charts})
-
-
+# --------------------------------------------------------------------------- payments
 @staff_required
 def payments(request):
-    qs = PaymentTransaction.objects.select_related("user")
+    qs = PaymentTransaction.objects.select_related("user", "agency")
     status, purpose, provider, q = (request.GET.get(k, "") for k in ("status", "purpose", "provider", "q"))
     if status:
         qs = qs.filter(status=status)
@@ -384,13 +336,14 @@ def payments(request):
 @staff_required
 def users(request):
     qs = User.objects.annotate(
-        n_bookings=Count("bookings", filter=Q(bookings__status="CONFIRMED"), distinct=True),
+        n_orders=Count("orders", filter=Q(orders__confirmed_at__isnull=False), distinct=True),
         n_equbs=Count("equb_memberships", distinct=True),
         spent=Sum("payments__amount", filter=Q(payments__status=PAID)),
     ).order_by("-date_joined")
     q, role = request.GET.get("q", "").strip(), request.GET.get("role", "")
     if q:
-        qs = qs.filter(Q(phone__icontains=q) | Q(full_name__icontains=q) | Q(email__icontains=q) | Q(referral_code__iexact=q))
+        qs = qs.filter(Q(phone__icontains=q) | Q(full_name__icontains=q) | Q(email__icontains=q) | Q(referral_code__iexact=q)
+                       | Q(national_id__iexact=q))
     if role == "staff":
         qs = qs.filter(is_staff=True)
     elif role == "customers":
@@ -426,7 +379,7 @@ def user_detail(request, pk):
                         "datasets": [{"label": "Paid", "data": [float(v) for v in spent.values()]}]}}
     return render(request, "console/user_detail.html", {
         "nav": "users", "u": u, "charts": charts, "total_spent": sum(spent.values(), Decimal("0")),
-        "bookings": u.bookings.select_related("flight__origin", "flight__destination", "package")[:20],
+        "orders": u.orders.select_related("listing", "unit", "company")[:20],
         "memberships": _with_standing(u.equb_memberships.select_related("group", "won_round")),
         "entries": u.giveaway_progress.filter(referrals__gt=0).select_related("giveaway"),
         "donations": Donation.objects.filter(user=u, status="PAID").select_related("campaign")[:10],
@@ -468,7 +421,7 @@ def deletion_decide(request, pk):
     elif action == "approve":
         name = u.full_name
         approve_deletion(u, by=request.user, note=note)
-        messages.success(request, f"{name}'s account was deleted. Their personal data is gone; payment and booking "
+        messages.success(request, f"{name}'s account was deleted. Their personal data is gone; payment and order "
                                   f"records are kept without their name.")
     elif action == "restore":
         restore_account(u, by=request.user, note=note)

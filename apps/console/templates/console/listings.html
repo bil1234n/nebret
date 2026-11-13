@@ -1,0 +1,28 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Listings{% endblock %}{% block heading %}Listings &amp; stock{% endblock %}
+{% block crumbs %}{{ stock.available }} unit{{ stock.available|pluralize }} for sale · {{ stock.reserved }} reserved · {{ stock.sold }} sold{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:listing_add' %}">+ New listing</a>{% endblock %}
+{% block content %}
+<div class="grid g-21">
+  <div>
+    <form class="toolbar" method="get">
+      <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Title, brand, model or area…">
+      <select name="category"><option value="">All categories</option>{% for c in categories %}<option value="{{ c.slug }}" {% if category == c.slug %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+      <select name="company"><option value="">All sellers</option><option value="nebret" {% if company == 'nebret' %}selected{% endif %}>Nebret Equb</option>{% for c in companies %}<option value="{{ c.pk }}" {% if company == c.pk|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+      <select name="status"><option value="">All statuses</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <button class="btn" type="submit">Filter</button>
+    </form>
+  </div>
+  <div class="card"><div class="card-h"><h2>Live listings</h2><span>by category group</span></div><div class="chart-box" style="height:140px"><canvas data-chart="groups"></canvas></div></div>
+</div>
+<div class="card mt"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Listing</th><th>Seller</th><th class="r">Price</th><th>Payment</th><th class="r">Available</th><th class="r">Sold</th><th class="r">Active orders</th><th>Status</th></tr></thead>
+  <tbody>{% for l in page %}<tr>
+    <td><div style="display:flex;gap:10px;align-items:center">{% if l.image_url %}<img src="{{ l.image_url }}" alt="" style="width:52px;height:38px;object-fit:cover;border-radius:6px">{% endif %}<div><a class="strong" href="{% url 'console:listing' l.pk %}">{{ l.title }}</a>{% if l.is_featured %} ⭐{% endif %}<div class="small muted">{{ l.category.name }} · {{ l.city }}{% if l.area %}, {{ l.area }}{% endif %}</div></div></div></td>
+    <td class="small">{% if l.company %}<a href="{% url 'console:agency' l.company_id %}">{{ l.company.name }}</a>{% else %}Nebret Equb{% endif %}</td>
+    <td class="r num strong">{{ l.price|money }}</td>
+    <td class="small">{% if l.allow_full_payment %}Full {% endif %}{% if l.allow_reservation and l.reservation_fee %}· Reserve {% endif %}{% if l.allow_installments %}· {{ l.max_installment_months }} mo {% endif %}{% if l.allow_equb_payout %}· Equb{% endif %}</td>
+    <td class="r num">{{ l.available }}</td><td class="r num">{{ l.sold }}</td><td class="r num">{{ l.n_orders }}</td><td>{{ l.status|status_badge:l.get_status_display }}</td></tr>
+  {% empty %}<tr><td colspan="8" class="empty">No listings yet. <a href="{% url 'console:listing_add' %}">Create the first listing →</a></td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

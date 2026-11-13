@@ -29,7 +29,7 @@ def _urls(txn):
 
 
 def _attach_agency(txn: PaymentTransaction, target) -> None:
-    """Mark agency sales so Chapa splits them and the commission is recorded."""
+    """Mark partner-company sales so Chapa splits them and the commission is recorded."""
     from apps.agencies.services import agency_for_payment
 
     agency = agency_for_payment(target, txn.user)
@@ -37,14 +37,14 @@ def _attach_agency(txn: PaymentTransaction, target) -> None:
         return
     txn.agency = agency
     txn.platform_fee = agency.commission_on(txn.amount)
-    # Chapa pays the agency's share straight to its bank when it has a subaccount.
+    # Chapa pays the company's share straight to its bank when it has a subaccount.
     txn.split_settled = txn.provider == "chapa" and agency.has_split
 
 
 def initiate_payment(*, user, target, amount: Decimal, purpose: str, provider: str | None = None,
                      payer_phone: str = "") -> PaymentTransaction:
     """Create a transaction for ``target`` and obtain a checkout URL from the provider."""
-    provider = provider or settings.VACATION["DEFAULT_PAYMENT_PROVIDER"]
+    provider = provider or settings.NEBRET["DEFAULT_PAYMENT_PROVIDER"]
     amount = Decimal(amount).quantize(Decimal("0.01"))
     if amount <= 0:
         raise BusinessRuleError("Payment amount must be positive.")
@@ -63,7 +63,7 @@ def initiate_payment(*, user, target, amount: Decimal, purpose: str, provider: s
         return existing
 
     txn = PaymentTransaction(
-        user=user, provider=provider, purpose=purpose, amount=amount, currency=settings.VACATION["CURRENCY"],
+        user=user, provider=provider, purpose=purpose, amount=amount, currency=settings.NEBRET["CURRENCY"],
         content_type=ct, object_id=target.pk, payer_phone=payer_phone or user.phone,
     )
     _attach_agency(txn, target)

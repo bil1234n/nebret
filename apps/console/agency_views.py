@@ -1,4 +1,4 @@
-"""Console: manage travel agencies (partners), their Chapa payout subaccount, commission and payouts."""
+"""Console: manage partner companies (sellers), their Chapa payout subaccount, commission and payouts."""
 from __future__ import annotations
 
 from django.contrib import messages
@@ -20,8 +20,10 @@ Payout = AgencyLedgerEntry.Payout
 @staff_required
 def agencies(request):
     q, status = request.GET.get("q", "").strip(), request.GET.get("status", "")
+    kind = request.GET.get("kind", "")
     qs = Agency.objects.annotate(
         n_customers=Count("customers", distinct=True),
+        n_listings=Count("listings", filter=Q(listings__status="ACTIVE"), distinct=True),
         sales=Sum("ledger__gross_amount", filter=~Q(ledger__payout_status=Payout.REVERSED)),
         commission=Sum("ledger__commission", filter=~Q(ledger__payout_status=Payout.REVERSED)),
         owed=Sum("ledger__agency_amount", filter=Q(ledger__payout_status=Payout.OWED)))
@@ -29,6 +31,8 @@ def agencies(request):
         qs = qs.filter(Q(name__icontains=q) | Q(phone__icontains=q) | Q(license_number__icontains=q))
     if status:
         qs = qs.filter(status=status)
+    if kind:
+        qs = qs.filter(kind=kind)
     live = AgencyLedgerEntry.objects.exclude(payout_status=Payout.REVERSED)
     kpi = {"agencies": Agency.objects.filter(status=Agency.Status.ACTIVE).count(),
            "sales": live.aggregate(s=Sum("gross_amount"))["s"] or 0,
@@ -36,7 +40,7 @@ def agencies(request):
            "owed": AgencyLedgerEntry.objects.filter(payout_status=Payout.OWED).aggregate(s=Sum("agency_amount"))["s"] or 0}
     return render(request, "console/agencies.html", {
         "nav": "agencies", "page": page(request, qs.order_by("name")), "q": q, "status": status,
-        "statuses": Agency.Status.choices, "kpi": kpi})
+        "statuses": Agency.Status.choices, "kinds": Agency.Kind.choices, "kind": kind, "kpi": kpi})
 
 
 @staff_required
@@ -46,7 +50,7 @@ def agency_form(request, pk=None):
     if request.method == "POST" and form.is_valid():
         if obj:
             form.save()
-            messages.success(request, "Agency saved.")
+            messages.success(request, "Company saved.")
             return redirect("console:agency", pk=obj.pk)
         d = form.cleaned_data
         try:
@@ -61,12 +65,12 @@ def agency_form(request, pk=None):
             form.add_error(None, str(exc.detail))
         else:
             messages.success(request, f"{agency.name} created. The owner signs in at /console/login/ with "
-                                      f"{d['owner_phone']} and is taken to the agency portal.")
+                                      f"{d['owner_phone']} and is taken to the company portal.")
             return redirect("console:agency", pk=agency.pk)
     from .manage_views import _render
 
-    return _render(request, nav="agencies", title=f"Edit {obj.name}" if obj else "New travel agency",
-                   crumbs="Travel agencies", form=form, obj=obj,
+    return _render(request, nav="agencies", title=f"Edit {obj.name}" if obj else "New partner company",
+                   crumbs="Partner companies", form=form, obj=obj,
                    cancel=reverse("console:agency", args=[obj.pk]) if obj else reverse("console:agencies"))
 
 
@@ -104,9 +108,11 @@ def agency_detail(request, pk):
         except BusinessRuleError as exc:
             messages.error(request, str(exc.detail))
         return redirect(here)
-    owed = a.ledger.filter(payout_status=Payout.OWED).select_related("customer", "booking")
+    owed = a.ledger.filter(payout_status=Payout.OWED).select_related("customer", "order")
     return render(request, "console/agency_detail.html", {
         "nav": "agencies", "a": a, "total": ag.summary(a), "owed": owed,
-        "ledger": a.ledger.select_related("customer", "booking")[:30],
+        "ledger": a.ledger.select_related("customer", "order")[:30],
+        "listings": a.listings.select_related("category").order_by("-created_at")[:15],
+        "orders": a.orders.select_related("user", "listing").order_by("-created_at")[:15],
         "staff": a.staff.select_related("user"), "customers": a.customers.select_related("user")[:15],
         "n_customers": a.customers.count(), "staff_form": StaffForm(), "statuses": Agency.Status.choices})

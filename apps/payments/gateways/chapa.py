@@ -2,9 +2,9 @@
 Chapa aggregator (cards, telebirr, CBE Birr, M-Pesa, Amole…).
 
 * Checkout: ``POST /transaction/initialize`` → hosted checkout URL.
-* Split payments: when a transaction belongs to a travel agency with a Chapa subaccount, the
+* Split payments: when a transaction belongs to a partner company with a Chapa subaccount, the
   ``subaccounts`` block tells Chapa to keep our commission (``split_value`` = 0.05 for 5 %) and settle
-  the rest straight to the agency's bank account.
+  the rest straight to the company's bank account.
 * Callback: Chapa calls ``callback_url`` with ``GET ?trx_ref=…&status=…`` (unsigned) – we only use it as a
   hint and re-verify with the API.
 * Webhook: the dashboard webhook POSTs JSON signed with ``x-chapa-signature`` (HMAC-SHA256 of the body) and
@@ -73,7 +73,7 @@ class ChapaGateway(PaymentGateway):
     # ------------------------------------------------------------------ checkout
     def initiate(self, txn, *, return_url, notify_url):
         user = txn.user
-        first, _, last = (user.full_name or "Vacation Equb Customer").strip().partition(" ")
+        first, _, last = (user.full_name or "Nebret Equb Customer").strip().partition(" ")
         body = {
             "amount": f"{txn.amount:.2f}",
             "currency": txn.currency,
@@ -83,7 +83,7 @@ class ChapaGateway(PaymentGateway):
             "callback_url": notify_url,
             "return_url": return_url,
             "customization": {
-                "title": (self.config.get("CHECKOUT_TITLE") or "Vacation Equb")[:16],
+                "title": (self.config.get("CHECKOUT_TITLE") or "Nebret Equb")[:16],
                 "description": _clean_description(txn.get_purpose_display()),
             },
             "meta": {"purpose": txn.purpose},
@@ -104,7 +104,7 @@ class ChapaGateway(PaymentGateway):
 
     @staticmethod
     def split_for(txn) -> dict | None:
-        """Chapa split block for agency transactions (we keep ``platform_fee_percent``)."""
+        """Chapa split block for partner-company transactions (we keep ``platform_fee_percent``)."""
         agency = getattr(txn, "agency", None)
         sub = getattr(agency, "chapa_subaccount_id", "") if agency else ""
         if not sub or not getattr(agency, "is_active", False):
@@ -173,7 +173,7 @@ class ChapaGateway(PaymentGateway):
         data = self._call("POST", f"/refund/{txn.reference.hex}", json=body)
         return VerificationResult(status="REFUNDED", provider_reference=txn.provider_reference, amount=amount, raw=data)
 
-    # ------------------------------------------------------------------ banks & subaccounts (agency payouts)
+    # ------------------------------------------------------------------ banks & subaccounts (company payouts)
     def banks(self) -> list[dict]:
         data = self._call("GET", "/banks")
         rows = data.get("data") or []

@@ -6,7 +6,8 @@ from apps.core.models import TimeStampedModel
 
 class Notification(TimeStampedModel):
     class Kind(models.TextChoices):
-        BOOKING = "BOOKING", "Booking"
+        ORDER = "ORDER", "Order"
+        INSTALLMENT = "INSTALLMENT", "Installment"
         PAYMENT = "PAYMENT", "Payment"
         EQUB_REMINDER = "EQUB_REMINDER", "Equb reminder"
         EQUB_WIN = "EQUB_WIN", "Equb win"

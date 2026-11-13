@@ -63,7 +63,7 @@ class GiveawaySerializer(serializers.ModelSerializer):
         model = Giveaway
         fields = ["id", "title", "slug", "description", "image_url", "sponsor_type", "sponsor_type_display", "sponsor_name",
                   "sponsor_note", "sponsor_logo_url", "prize_type", "prize_type_display", "prize_title", "prize_value",
-                  "prize_package", "number_of_winners", "referrals_per_entry", "max_entries_per_user", "starts_at",
+                  "prize_listing", "number_of_winners", "referrals_per_entry", "max_entries_per_user", "starts_at",
                   "ends_at", "draw_at", "status", "status_display", "is_live", "is_featured", "entries_issued",
                   "participants_count", "referrals_count", "seed_commitment", "my_progress"]
 
@@ -98,4 +98,4 @@ class MyWinSerializer(serializers.ModelSerializer):
 
 
 class ClaimSerializer(serializers.Serializer):
-    booking_reference = serializers.CharField(required=False, allow_blank=True, max_length=6)
+    order_reference = serializers.CharField(required=False, allow_blank=True, max_length=10)

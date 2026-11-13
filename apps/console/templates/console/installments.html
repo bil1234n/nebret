@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Installments{% endblock %}{% block heading %}Installments{% endblock %}{% block crumbs %}Receivables from orders being paid monthly{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Receivable</div><div class="value">{{ summary.receivable|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ summary.orders }} order{{ summary.orders|pluralize }} paying installments</div></div>
+  <div class="card kpi"><div class="label">Overdue installments</div><div class="value {% if summary.late_count %}red{% endif %}">{{ summary.late_count }}</div><div class="sub">{{ summary.late_amount|money }} overdue</div></div>
+</div>
+<div class="chips mt" style="margin-bottom:12px">
+  <a class="chip {% if tab == 'late' %}on{% endif %}" href="?tab=late">Overdue</a>
+  <a class="chip {% if tab == 'upcoming' %}on{% endif %}" href="?tab=upcoming">Due in 30 days</a>
+  <a class="chip {% if tab == 'paid' %}on{% endif %}" href="?tab=paid">Recently paid</a>
+</div>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Order</th><th>Customer</th><th>Item</th><th>#</th><th>Due</th><th class="r">Amount due</th><th>Status</th></tr></thead>
+  <tbody>{% for i in page %}<tr>
+    <td><a class="mono strong" href="{% url 'console:order' i.order.reference %}">{{ i.order.reference }}</a></td>
+    <td>{{ i.order.user.full_name }}<div class="small muted">{{ i.order.user.phone|tel }}</div></td>
+    <td class="small">{{ i.order.listing.title|truncatechars:32 }}{% if i.order.company %}<div class="muted">{{ i.order.company.name }}</div>{% endif %}</td>
+    <td class="num">{{ i.number }}/{{ i.order.installment_months }}</td>
+    <td class="small {% if i.due_date < today and i.status != 'PAID' %}strong{% endif %}">{{ i.due_date|date:"d M Y" }}</td>
+    <td class="r num strong">{% if tab == 'paid' %}{{ i.paid_amount|money }}{% else %}{{ i.amount_due|money }}{% endif %}</td>
+    <td>{{ i.status|status_badge:i.get_status_display }}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">Nothing here.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

@@ -10,8 +10,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.core.permissions import IsStaffOrReadOnly
+from apps.market.models import Order
 from apps.payments.serializers import PayRequestSerializer, PaymentTransactionSerializer
-from apps.travel.models import Booking
 
 from . import operations, scheduled, services, teams
 from . import standing as standing_mod
@@ -46,7 +46,7 @@ class EqubPackageViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class EqubGroupViewSet(viewsets.ModelViewSet):
-    """Destination Equb pools. Members join, contribute each round and a winner is drawn per cycle."""
+    """Property Equb circles. Members join, contribute each round and a winner is drawn per cycle."""
 
     permission_classes = [IsStaffOrReadOnly]
     lookup_field = "slug"
@@ -222,7 +222,7 @@ def membership_detail(m: EqubMembership, request) -> dict:
     rules = EqubSettings.load()
     st = standing_mod.standing_for(m, rules)
     g = m.group
-    payout = EqubPayout.objects.filter(membership=m).select_related("round__group", "booking").first()
+    payout = EqubPayout.objects.filter(membership=m).select_related("round__group", "order").first()
     current = g.rounds.select_related("draw").filter(status=EqubRound.Status.COLLECTING).first()
     current_data = None
     if current:
@@ -335,15 +335,16 @@ class PayoutViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return EqubPayout.objects.none()
-        return EqubPayout.objects.filter(membership__user=self.request.user).select_related("round__group", "booking")
+        return EqubPayout.objects.filter(membership__user=self.request.user).select_related("round__group", "order")
 
     @extend_schema(request=RedeemSerializer)
     @action(detail=True, methods=["post"])
     def redeem(self, request, pk=None):
+        """Use this payout on one of my marketplace orders (``order_reference``)."""
         s = RedeemSerializer(data=request.data)
         s.is_valid(raise_exception=True)
-        booking = get_object_or_404(Booking, reference=s.validated_data["booking_reference"].upper(), user=request.user)
-        payout = services.redeem_payout(self.get_object(), booking)
+        order = get_object_or_404(Order, reference=s.validated_data["order_reference"].upper(), user=request.user)
+        payout = services.redeem_payout(self.get_object(), order)
         return Response(EqubPayoutSerializer(payout).data)
 
 
@@ -424,7 +425,7 @@ class GroupEqubViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=["get"], url_path="lookup-phone")
     def lookup_phone(self, request):
-        """Is this full phone number a Vacation Equb customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
+        """Is this full phone number a Nebret Equb customer? ``?phone=+251912345678`` (``&team=<id>`` to check that group)."""
         team = None
         if request.query_params.get("team"):
             team = self.get_queryset().filter(pk=request.query_params["team"]).first()
