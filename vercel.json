@@ -2,19 +2,19 @@
   "version": 2,
   "builds": [
     {
-      "src": "vacation/wsgi.py",
+      "src": "nebret/wsgi.py",
       "use": "@vercel/python",
       "config": {
         "maxLambdaSize": "15mb",
         "runtime": "python3.11",
-        "buildCommand": "python manage.py migrate && python manage.py collectstatic --noinput"
+        "buildCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput"
       }
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "vacation/wsgi.py"
+      "dest": "nebret/wsgi.py"
     }
   ]
 }
