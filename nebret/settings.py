@@ -169,6 +169,13 @@ STORAGES = {
     },
 }
 
+# Picture uploads (listing photos) go to Cloudinary – see apps/market/uploads.py.
+# Either CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name> or the three values below.
+CLOUDINARY_URL = env("CLOUDINARY_URL", "")
+CLOUDINARY_CLOUD_NAME = env("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = env("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = env("CLOUDINARY_API_SECRET", "")
+
 # Staff web console
 LOGIN_URL = "console:login"
 LOGIN_REDIRECT_URL = "console:dashboard"

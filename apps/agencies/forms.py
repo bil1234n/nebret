@@ -6,8 +6,11 @@ import json
 from django import forms
 from django.utils import timezone
 
+from django.forms.models import ModelChoiceIterator
+
 from apps.console.forms import StyledMixin
-from apps.market.models import Listing, Order
+from apps.market.models import Category, Listing, Order
+from apps.market.uploads import UploadError, upload_image
 
 from .models import Agency, AgencyStaff, FamilyMember
 
@@ -126,6 +129,47 @@ class SpecsField(forms.CharField):
         return out
 
 
+NEW_CATEGORY = "__new__"
+
+
+class _CategoryIterator(ModelChoiceIterator):
+    """The category list plus a last "Other" choice for typing a new category."""
+
+    def __iter__(self):
+        yield from super().__iter__()
+        if getattr(self.field, "allow_new", False):
+            yield (NEW_CATEGORY, "Other – add my own category…")
+
+    def __len__(self):
+        return super().__len__() + (1 if getattr(self.field, "allow_new", False) else 0)
+
+
+class CategoryChoiceField(forms.ModelChoiceField):
+    iterator = _CategoryIterator
+    allow_new = False
+
+    def to_python(self, value):
+        if value == NEW_CATEGORY and self.allow_new:
+            return NEW_CATEGORY
+        return super().to_python(value)
+
+
+class MultipleImageInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class MultipleImageField(forms.ImageField):
+    """Several pictures from one file input (Django checks each one is a real image)."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("widget", MultipleImageInput(attrs={"accept": "image/*", "multiple": True}))
+        super().__init__(*args, **kwargs)
+
+    def clean(self, data, initial=None):
+        files = data if isinstance(data, (list, tuple)) else ([data] if data else [])
+        return [super(MultipleImageField, self).clean(f, initial) for f in files if f]
+
+
 class ListingForm(StyledMixin, forms.ModelForm):
     """Create / edit a listing (company portal and console)."""
 
@@ -135,13 +179,22 @@ class ListingForm(StyledMixin, forms.ModelForm):
     initial_units = forms.IntegerField(label="How many units for sale", min_value=0, max_value=1000, required=False,
                                        initial=1, help_text="Each unit is one sellable item (apartment, car, e-bike…). "
                                                             "You can add or name units later.")
-    gallery = JSONListField(label="More photos (links)", required=False, help_text="One picture link per line.")
+    gallery = JSONListField(label="More photos (links)", required=False,
+                            help_text="One picture link per line. Pictures you upload above are added here.")
+    image_file = forms.ImageField(label="Cover picture", required=False,
+                                  widget=forms.ClearableFileInput(attrs={"accept": "image/*", "data-upload-preview": "1"}),
+                                  help_text="Upload from your computer or phone – or paste a link below.")
+    gallery_files = MultipleImageField(label="More photos", required=False,
+                                       help_text="Choose one or several pictures at once.")
+    new_category = forms.CharField(label="New category name", max_length=80, required=False,
+                                   help_text="It is added to the category list and can be edited later.")
+    new_category_group = forms.ChoiceField(label="New category type", required=False, choices=Category.Group.choices)
 
     sections = [
-        ("What you are selling", "", ["category", "title", "summary", "description", "brand", "model_name", "year",
-                                      "condition"]),
+        ("What you are selling", "", ["category", "new_category", "new_category_group", "title", "summary",
+                                      "description", "brand", "model_name", "year", "condition"]),
         ("Location", "", ["city", "area", "address"]),
-        ("Details", "", ["specs", "features", "image_url", "gallery", "video_url"]),
+        ("Details", "", ["specs", "features", "image_file", "image_url", "gallery_files", "gallery", "video_url"]),
         ("Price", "", ["price", "compare_at_price", "initial_units"]),
         ("How customers can pay", "Offer at least one. Installments use a flat, fixed finance charge (0 = "
                                   "interest-free).",
@@ -160,9 +213,23 @@ class ListingForm(StyledMixin, forms.ModelForm):
                   "allow_equb_payout", "delivery_available", "delivery_fee", "handover_days", "warranty_months",
                   "status", "is_featured"]
         widgets = {"description": forms.Textarea(attrs={"rows": 5})}
+        labels = {"image_url": "Cover picture link"}
 
-    def __init__(self, *args, company_portal=False, **kwargs):
+    def __init__(self, *args, company_portal=False, allow_new_category=False, **kwargs):
         super().__init__(*args, **kwargs)
+        old = self.fields["category"]
+        cat = CategoryChoiceField(queryset=old.queryset, required=True, label=old.label, help_text=old.help_text,
+                                  initial=old.initial)
+        cat.allow_new = allow_new_category
+        self.fields["category"] = cat
+        if allow_new_category:
+            cat.widget.attrs["data-new-category"] = NEW_CATEGORY
+        else:
+            for n in ("new_category", "new_category_group"):
+                self.fields.pop(n)
+            self.sections = [(t, h, [n for n in names if n not in ("new_category", "new_category_group")])
+                             for t, h, names in self.sections]
+        self.fields["image_url"].help_text = "Filled in automatically when you upload a picture."
         if self.instance.pk:
             self.fields.pop("initial_units")
             self.sections = [(t, h, [n for n in names if n != "initial_units"]) for t, h, names in self.sections]
@@ -170,6 +237,47 @@ class ListingForm(StyledMixin, forms.ModelForm):
         if company_portal:
             self.fields.pop("is_featured")
             self.sections = [(t, h, [n for n in names if n != "is_featured"]) for t, h, names in self.sections]
+
+    def clean(self):
+        data = super().clean()
+        new_cat = data.get("category") == NEW_CATEGORY
+        if new_cat:
+            if not (data.get("new_category") or "").strip():
+                self.add_error("new_category", "Type the name of the new category.")
+            if not data.get("new_category_group"):
+                self.add_error("new_category_group", "Choose what kind of item this category is.")
+        if self.errors:
+            # never hand "__new__" to the model, and only upload once everything else is right
+            if new_cat:
+                data.pop("category", None)
+            return data
+        try:
+            if data.get("image_file"):
+                data["image_url"] = upload_image(data["image_file"])
+            uploaded = [upload_image(f) for f in data.get("gallery_files") or []]
+        except UploadError as exc:
+            self.add_error(None, str(exc))
+            if new_cat:
+                data.pop("category", None)
+            return data
+        if uploaded:
+            have = list(data.get("gallery") or [])
+            data["gallery"] = have + [u for u in uploaded if u not in have]
+            if not data.get("image_url"):
+                data["image_url"] = data["gallery"][0]
+        if new_cat:
+            name = data["new_category"].strip()
+            category = Category.objects.filter(name__iexact=name).first() or Category.objects.create(
+                name=name, group=data["new_category_group"],
+                sort_order=(Category.objects.order_by("-sort_order").values_list("sort_order", flat=True).first() or 0) + 1)
+            data["category"] = category
+        return data
+
+    def _get_validation_exclusions(self):
+        exclude = super()._get_validation_exclusions()
+        if self.data.get(self.add_prefix("category")) == NEW_CATEGORY:
+            exclude.add("category")  # the new category is created in clean(); don't report it as missing
+        return exclude
 
     def save(self, commit=True):
         obj = super().save(commit=commit)

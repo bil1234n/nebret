@@ -245,7 +245,7 @@ def listings(request):
 @staff_required
 def listing_form(request, pk=None):
     obj = get_object_or_404(Listing, pk=pk) if pk else None
-    form = ListingForm(request.POST or None, instance=obj)
+    form = ListingForm(request.POST or None, request.FILES or None, instance=obj, allow_new_category=True)
     form.fields["company"] = dj_forms.ModelChoiceField(
         queryset=Agency.objects.order_by("name"), required=False, initial=obj.company_id if obj else None,
         empty_label="Nebret (sold directly)", label="Seller")

@@ -124,7 +124,7 @@ def listings(request):
 @agency_required(manage=True)
 def listing_form(request, pk=None):
     obj = get_object_or_404(_listings(request), pk=pk) if pk else None
-    form = f.ListingForm(request.POST or None, instance=obj, company_portal=True)
+    form = f.ListingForm(request.POST or None, request.FILES or None, instance=obj, company_portal=True)
     if request.method == "POST" and form.is_valid():
         listing = form.save(commit=False)
         listing.company = request.agency

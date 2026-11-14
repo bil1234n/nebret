@@ -827,3 +827,102 @@
     });
   });
 })();
+
+/* Listing form: "Other – add my own category" shows the new-category fields right there, and picture
+   inputs become a drop zone with previews. Big photos are shrunk in the browser before upload
+   (max 2000px, JPEG) so they stay well under the server's request limit. */
+(function () {
+  const fieldOf = (name) => { const el = document.querySelector(`[name="${name}"]`); return el && el.closest('.field'); };
+
+  document.querySelectorAll('select[data-new-category]').forEach((sel) => {
+    const extras = ['new_category', 'new_category_group'].map(fieldOf).filter(Boolean);
+    const sync = () => {
+      const on = sel.value === sel.dataset.newCategory;
+      extras.forEach((f) => { f.hidden = !on; });
+      if (on) { const inp = document.querySelector('[name="new_category"]'); if (inp && !inp.value) inp.focus(); }
+    };
+    sel.addEventListener('change', sync);
+    sync();
+  });
+
+  const MAX_SIDE = 2000;
+  const shrink = (file) => new Promise((resolve) => {
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 900 * 1024) { resolve(file); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => {
+        if (!b || b.size >= file.size) { resolve(file); return; }
+        resolve(new File([b], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+
+  document.querySelectorAll('.form-page input[type=file][accept^="image"]').forEach((input) => {
+    const field = input.closest('.field');
+    if (!field) return;
+    // Django's ClearableFileInput may wrap the input with "Currently / Change" text; keep only the input.
+    const zone = document.createElement('label');
+    zone.className = 'upload-zone';
+    zone.innerHTML = `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3M12 4v12M7 9l5-5 5 5"/></svg>
+      <span class="strong">${input.multiple ? 'Upload pictures' : 'Upload a picture'}</span>
+      <span class="small muted">Click to choose${input.multiple ? ' one or several' : ''}, or drop ${input.multiple ? 'them' : 'it'} here · JPG, PNG, WebP</span>`;
+    const thumbs = document.createElement('div');
+    thumbs.className = 'upload-thumbs';
+    input.parentNode.insertBefore(zone, input);
+    zone.appendChild(input);
+    zone.after(thumbs);
+    input.classList.add('upload-input');
+
+    const show = (files) => {
+      thumbs.innerHTML = '';
+      Array.from(files).forEach((f) => {
+        const t = document.createElement('div');
+        t.className = 'upload-thumb';
+        const im = document.createElement('img');
+        im.src = URL.createObjectURL(f); im.alt = f.name;
+        const cap = document.createElement('span');
+        cap.textContent = `${(f.size / 1024 / 1024).toFixed(1)} MB`;
+        t.append(im, cap);
+        thumbs.appendChild(t);
+      });
+    };
+    const handle = async (files) => {
+      zone.classList.add('busy');
+      const out = await Promise.all(Array.from(files).map(shrink));
+      try {
+        const dt = new DataTransfer();
+        out.forEach((f) => dt.items.add(f));
+        input.files = dt.files;
+      } catch (e) { /* very old browser: keep the originals */ }
+      zone.classList.remove('busy');
+      show(input.files);
+    };
+    input.addEventListener('change', () => { if (input.files.length) handle(input.files); else thumbs.innerHTML = ''; });
+    ['dragenter', 'dragover'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.remove('drag'); }));
+    zone.addEventListener('drop', (e) => {
+      const files = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith('image/'));
+      if (files.length) handle(input.multiple ? files : files.slice(0, 1));
+    });
+  });
+
+  // Show the current cover picture next to its link field.
+  const cover = document.querySelector('.form-page input[name="image_url"]');
+  if (cover) {
+    const prev = document.createElement('img');
+    prev.className = 'cover-preview';
+    prev.alt = '';
+    const sync = () => { const v = cover.value.trim(); prev.hidden = !/^https?:\/\//.test(v); if (!prev.hidden) prev.src = v; };
+    cover.after(prev);
+    cover.addEventListener('input', sync);
+    sync();
+  }
+})();
