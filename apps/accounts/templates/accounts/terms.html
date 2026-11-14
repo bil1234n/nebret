@@ -1,0 +1,104 @@
+{% extends "accounts/_page.html" %}
+{% block title %}Terms of service{% endblock %}
+{% block heading %}Terms of service{% endblock %}
+{% block sub %}<p>Last updated {{ updated }}</p>{% endblock %}
+{% block content %}
+<p>These terms apply when you use the Nebret app or website. By creating an account you agree to them. Please also read
+  our <a href="/privacy/">privacy policy</a>. Questions: <a href="mailto:{{ support_email }}">{{ support_email }}</a>.</p>
+
+<h2>1. Who we are</h2>
+<p>Nebret runs an online marketplace in Ethiopia where verified partner companies (real estate developers, car dealers,
+  e-bike and electronics sellers) list cars, houses, apartments, land, commercial units, e-bikes and electronics. Nebret
+  also organises Equb savings groups and community crowdfunding and giveaways. The partner company that lists an item is
+  the seller of that item; Nebret takes the order and payment and arranges the handover with the seller.</p>
+
+<h2>2. Your account</h2>
+<ul>
+  <li>You must be at least 18 years old and use your own Ethiopian mobile number.</li>
+  <li>You sign in with your phone number and a 6-digit PIN. Keep your PIN secret – you are responsible for what is done
+    with your account.</li>
+  <li>The details you give (name, ID number, address) must be true; they are used on sale contracts and title or
+    vehicle registration.</li>
+  <li>We may suspend an account that is used for fraud, uses someone else's identity or breaks these terms.</li>
+</ul>
+
+<h2>3. Buying in the market</h2>
+<ul>
+  <li>Prices are in Ethiopian Birr (ETB) and are set by the seller. The checkout shows the exact amount of every
+    payment before you confirm.</li>
+  <li>When you place an order the unit you chose is held for you while you pay (about {{ hold_minutes }}–{{ payment_window }}
+    minutes). If the first payment is not made in time, the order expires and the unit is released.</li>
+  <li>You can pay in one of four ways, when the listing offers it:
+    <ul>
+      <li><b>In full</b> – the whole price at once.</li>
+      <li><b>Reservation</b> – a deposit holds the unit; the balance is paid by the date shown. A reservation that is
+        not completed by that date lapses.</li>
+      <li><b>Monthly installments</b> – a down payment, then equal monthly payments for up to {{ max_months }} months.
+        There is a {{ grace_days }}-day grace period for each installment and <b>no late fees or interest are charged</b>.
+        If installments stay unpaid, the seller may cancel the order as described in your order's terms.</li>
+      <li><b>Equb payout</b> – an Equb payout voucher can be used toward any order.</li>
+    </ul>
+  </li>
+  <li>The item is handed over only when it is fully paid. You receive a signed handover pass (QR code) in the app,
+    which the seller checks at handover. Ownership transfer (title deed, vehicle registration) follows Ethiopian law
+    and the seller's sale contract.</li>
+  <li>Photos, specifications and descriptions are provided by the seller. Ask the seller, or book a site visit or test
+    drive, before you buy.</li>
+</ul>
+
+<h2>4. Cancellations and refunds</h2>
+<ul>
+  <li>You can cancel an order before handover from the app or by contacting us. Any refund is calculated according to
+    the seller's terms shown with the listing and order, and is paid back to you through the original payment method or
+    another method we agree with you.</li>
+  <li>Orders that expire before the first payment cost you nothing.</li>
+</ul>
+
+<h2>5. Equb</h2>
+<ul>
+  <li>An Equb is a savings group. Every member pays the same contribution every round, and every member receives the
+    full pot exactly once. The draw only decides the order in which members are paid. Equb is not gambling and not a
+    loan: nobody receives another member's money and nobody pays interest.</li>
+  <li>Draws are random and provably fair – you can verify any draw in the app – unless a group is set to manual
+    selection, which is shown in the group.</li>
+  <li>To stay eligible for a draw, a member must be up to date with contributions. After a few paid rounds we ask for an
+    Equb member profile (photo, ID and monthly income) to confirm identity.</li>
+  <li>A member who joins after the first round pays the rounds that were already drawn. No late penalty is charged.</li>
+  <li>Members who fall far behind may be warned, held out of draws, and finally removed from the group under the
+    group's rules. What a removed member paid and owes is settled as described in the group's terms.</li>
+  <li>Each Equb group has its own terms (amount, frequency, duration, payout and fees), which you accept when you
+    join.</li>
+</ul>
+
+<h2>6. Community crowdfunding and giveaways</h2>
+<ul>
+  <li><b>Crowdfunding (Sadaqah / Hibah):</b> your gift goes 100% to the cause. A separate platform fee of
+    {{ crowdfund_fee }}% is shown before you pay. Gifts never earn tickets, entries or prizes.</li>
+  <li><b>Giveaways</b> are free to enter and paid for by a sponsor. No purchase or payment is needed to take part.
+    Every {{ referrals_per_entry }} friends who register with your referral code earn you one free entry. Winners are
+    chosen by a provably-fair draw and can be verified in the app. Creating fake accounts to earn entries is not
+    allowed and removes your entries.</li>
+</ul>
+
+<h2>7. Payments</h2>
+<p>Payments are processed by telebirr and Chapa. Nebret never sees your PIN, card or bank login. You can also pay at a
+  Nebret or partner office, and you receive a receipt in the app for every payment.</p>
+
+<h2>8. Acceptable use</h2>
+<p>Do not misuse the service: no fraud, false listings or inquiries, harassment of sellers or staff, attempts to break
+  into accounts or systems, or use of the service for anything illegal.</p>
+
+<h2>9. Our responsibility</h2>
+<p>We work to verify partner companies and keep the service running, but the seller is responsible for the item and
+  its condition, and for the sale contract. Nebret is not liable for indirect losses or for delays caused by events
+  outside our control. Nothing in these terms limits your rights under Ethiopian consumer protection law.</p>
+
+<h2>10. Deleting your account</h2>
+<p>You can delete your account at any time in the app (Profile → Delete account) or on the
+  <a href="/account/delete/">delete account page</a>. Open orders, installments and Equb places must be settled as
+  described above; payment and order records are kept as the law requires.</p>
+
+<h2>11. Changes and law</h2>
+<p>We may update these terms. We will change the date above and, for important changes, tell you in the app. These
+  terms are governed by the laws of the Federal Democratic Republic of Ethiopia.</p>
+{% endblock %}

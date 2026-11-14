@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from apps.accounts.web import delete_account, privacy_policy
+from apps.accounts.web import delete_account, privacy_policy, terms_of_service
 from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView
 
 admin.site.site_header = "Nebret Administration"
@@ -13,6 +13,7 @@ admin.site.site_title = "Nebret Admin"
 urlpatterns = [
     path("", LandingView.as_view(), name="landing"),
     path("privacy/", privacy_policy, name="privacy"),
+    path("terms/", terms_of_service, name="terms"),
     path("account/delete/", delete_account, name="delete-account-web"),
     path("admin/", admin.site.urls),
     path("console/", include("apps.console.urls")),

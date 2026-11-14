@@ -4,6 +4,7 @@ Public web pages Google Play asks for:
 * ``/privacy/``         – the privacy policy (link it in Play Console → App content → Privacy policy)
 * ``/account/delete/``  – lets anyone ask to delete their account without the app
                           (Play Console → App content → Data safety → "Delete account URL")
+* ``/terms/``           – the terms of service (Play Console → App content → Trader status → Terms of Service)
 """
 from django import forms
 from django.conf import settings
@@ -22,6 +23,14 @@ def _context(**extra):
 
 def privacy_policy(request):
     return render(request, "accounts/privacy.html", _context())
+
+
+def terms_of_service(request):
+    rules = settings.NEBRET
+    return render(request, "accounts/terms.html", _context(
+        hold_minutes=rules["RESERVATION_HOLD_MINUTES"], payment_window=rules["ORDER_PAYMENT_WINDOW_MINUTES"],
+        grace_days=rules["INSTALLMENT_GRACE_DAYS"], max_months=rules["MAX_INSTALLMENT_MONTHS"],
+        crowdfund_fee=rules["CROWDFUND_FEE_PERCENT"], referrals_per_entry=rules["REFERRALS_PER_GIVEAWAY_ENTRY"]))
 
 
 class DeleteAccountForm(forms.Form):
