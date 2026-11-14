@@ -96,11 +96,42 @@ class KycView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        profile = KycProfile.objects.filter(user=request.user).defer("photo", "id_photo").first()
-        return Response({"profile": KycSerializer(profile).data if profile else None})
+        """``?full=1`` also returns the member's own pictures and which Equbs ask for this form."""
+        full = request.query_params.get("full") in ("1", "true", "yes")
+        qs = KycProfile.objects.filter(user=request.user)
+        profile = (qs if full else qs.defer("photo", "id_photo")).first()
+        data = {"profile": KycSerializer(profile).data if profile else None}
+        if full:
+            import base64
+
+            def uri(blob):
+                return f"data:image/jpeg;base64,{base64.b64encode(bytes(blob)).decode()}" if blob else None
+
+            if profile:
+                data["profile"].update(photo=uri(profile.photo), id_photo=uri(profile.id_photo),
+                                       reviewed_at=profile.reviewed_at)
+            data["equbs"] = _kyc_equbs(request.user)
+        return Response(data)
 
     def post(self, request):
         d = request.data
         profile = services.submit_kyc(request.user, photo=request.FILES.get("photo"), national_id=d.get("national_id"),
                                       monthly_income=d.get("monthly_income"), id_photo=request.FILES.get("id_photo"))
         return Response({"profile": KycSerializer(profile).data}, status=status.HTTP_201_CREATED)
+
+
+def _kyc_equbs(user) -> list[dict]:
+    """The Equbs this member is in, and whether / when each one asks for the profile form."""
+    from apps.equb import services as equb_services
+    from apps.equb import standing as st
+    from apps.equb.models import EqubMembership
+
+    places = list(EqubMembership.objects.filter(user=user, status__in=EqubMembership.LIVE_STATUSES)
+                  .select_related("group").order_by("-created_at"))
+    standings = st.standings_for(places) if places else {}
+    out = []
+    for m in places:
+        info = equb_services.kyc_info(m, standings[m.id].paid_rounds)
+        out.append({"membership_id": m.id, "group": m.group.name, "slug": m.group.slug, "position": m.position,
+                    "paid_rounds": standings[m.id].paid_rounds, **info})
+    return out

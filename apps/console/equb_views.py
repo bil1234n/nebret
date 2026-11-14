@@ -157,6 +157,21 @@ def equb_detail(request, slug):
             g.join_code = EqubGroup.new_join_code()
             g.save(update_fields=["join_code", "updated_at"])
             messages.success(request, f"New join code: {g.join_code}. The old code no longer works.")
+        elif action in ("kyc_approve", "kyc_reject"):
+            from apps.accounts.models import KycProfile
+            from apps.accounts.services import review_kyc
+
+            profile = KycProfile.objects.filter(user_id=request.POST.get("user"),
+                                                user__equb_memberships__group=g).defer("photo", "id_photo").first()
+            if not profile:
+                messages.error(request, "That profile form was not found.")
+            else:
+                approve = action == "kyc_approve"
+                review_kyc(profile, request.user, approve=approve, note=request.POST.get("note", "").strip())
+                name = profile.user.full_name or profile.user.phone
+                messages.success(request, f"{name}'s profile form approved." if approve else
+                                 f"{name}'s profile form rejected – they were asked to send it again.")
+            return redirect(reverse("console:equb", args=[slug]) + "?tab=profiles&kyc=" + request.POST.get("kyc", ""))
         elif action == "cancel_pool":
             if g.status in (EqubGroup.Status.OPEN, EqubGroup.Status.DRAFT):
                 g.status = EqubGroup.Status.CANCELLED
@@ -187,7 +202,10 @@ def equb_detail(request, slug):
            "rules": rules_summary(g, EqubSettings.load()),
            "arrears": sum((standings[m.id].arrears for m in members), Decimal("0")),
            "credit": sum((standings[m.id].credit for m in members), Decimal("0"))}
-    if tab == "members":
+    ctx["kyc_pending"] = _kyc_pending_count(g, members)
+    if tab == "profiles":
+        ctx.update(_kyc_tab(request, g, members, standings))
+    elif tab == "members":
         filt = request.GET.get("standing", "")
         rows = [{"m": m, "s": standings[m.id]} for m in members]
         if filt == "behind":
@@ -218,6 +236,61 @@ def equb_detail(request, slug):
                                                  "PENDING": "#B8D8C8"}.get(s, "#5B6F66") for s in contrib_status]}]},
         })
     return render(request, "console/equb_detail.html", ctx)
+
+
+# --------------------------------------------------------------------------- member profile forms (KYC)
+KYC_FILTERS = [("", "All"), ("review", "Waiting for review"), ("approved", "Approved"), ("rejected", "Rejected"),
+               ("missing", "Not sent")]
+
+
+def _kyc_pending_count(g, members) -> int:
+    from apps.accounts.models import KycProfile
+
+    return KycProfile.objects.filter(user_id__in={m.user_id for m in members},
+                                     status=KycProfile.Status.SUBMITTED).count()
+
+
+def _kyc_tab(request, g, members, standings) -> dict:
+    """Every member's profile form (photo, ID, income) for this Equb, with what to review first."""
+    from apps.accounts.models import KycProfile
+
+    profiles = {p.user_id: p for p in KycProfile.objects.filter(user_id__in={m.user_id for m in members})
+                .defer("photo", "id_photo").select_related("reviewed_by")}
+    with_id = set(KycProfile.objects.filter(user_id__in=profiles, id_photo__isnull=False)
+                  .values_list("user_id", flat=True))
+    days = g.frequency_days or 30
+    monthly_cost = (Decimal(g.contribution_amount) * Decimal(30) / Decimal(days)).quantize(Decimal("1")) if days else None
+    order = {KycProfile.Status.SUBMITTED: 0, None: 1, KycProfile.Status.REJECTED: 2, KycProfile.Status.APPROVED: 3}
+    rows, seen = [], set()
+    for m in members:
+        if m.user_id in seen:  # one person can hold several places; their form is the same
+            continue
+        seen.add(m.user_id)
+        p = profiles.get(m.user_id)
+        s = standings[m.id]
+        share = None
+        if p and monthly_cost and p.monthly_income:
+            share = round(float(monthly_cost) / float(p.monthly_income) * 100)
+        rows.append({"m": m, "s": s, "p": p, "has_id": m.user_id in with_id, "share": share,
+                     "due": bool(g.require_kyc and s.paid_rounds >= g.kyc_after_payments),
+                     "payments_left": max(g.kyc_after_payments - s.paid_rounds, 0)})
+    counts = {"": len(rows),
+              "review": sum(1 for r in rows if r["p"] and r["p"].status == KycProfile.Status.SUBMITTED),
+              "approved": sum(1 for r in rows if r["p"] and r["p"].status == KycProfile.Status.APPROVED),
+              "rejected": sum(1 for r in rows if r["p"] and r["p"].status == KycProfile.Status.REJECTED),
+              "missing": sum(1 for r in rows if not r["p"])}
+    filt = request.GET.get("kyc", "")
+    if filt == "review":
+        rows = [r for r in rows if r["p"] and r["p"].status == KycProfile.Status.SUBMITTED]
+    elif filt == "approved":
+        rows = [r for r in rows if r["p"] and r["p"].status == KycProfile.Status.APPROVED]
+    elif filt == "rejected":
+        rows = [r for r in rows if r["p"] and r["p"].status == KycProfile.Status.REJECTED]
+    elif filt == "missing":
+        rows = [r for r in rows if not r["p"]]
+    rows.sort(key=lambda r: (order.get(r["p"].status if r["p"] else None, 9), r["m"].position))
+    return {"kyc_rows": rows, "kyc_filt": filt, "kyc_filters": [(k, label, counts[k]) for k, label in KYC_FILTERS],
+            "kyc_monthly_cost": monthly_cost}
 
 
 # --------------------------------------------------------------------------- rounds & draws

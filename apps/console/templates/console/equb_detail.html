@@ -29,6 +29,7 @@
   <a href="?tab=members" class="{% if tab == 'members' %}on{% endif %}">Members <span class="count {% if behind_count %}alert{% endif %}">{{ members_count }}</span></a>
   <a href="?tab=payments" class="{% if tab == 'payments' %}on{% endif %}">Payments</a>
   <a href="?tab=draws" class="{% if tab == 'draws' %}on{% endif %}">Rounds &amp; draws <span class="count">{{ rounds|length }}</span></a>
+  <a href="?tab=profiles" class="{% if tab == 'profiles' %}on{% endif %}">Profile forms{% if kyc_pending %} <span class="count alert" title="Waiting for review">{{ kyc_pending }}</span>{% endif %}</a>
 </div>
 
 {% if tab == 'members' %}
@@ -76,6 +77,62 @@
   <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Member</th><th>Round</th><th>Provider</th><th class="r">Amount</th></tr></thead><tbody>
   {% for c in legacy %}<tr><td class="small">{{ c.paid_at|date:"d M Y, H:i" }}</td><td><a href="{% url 'console:equb_member' c.membership_id %}">{{ c.membership.user.full_name }}</a></td><td>R{{ c.round.number }}</td><td>{{ c.payment.get_provider_display }}</td><td class="r num">{{ c.amount_due|money }}</td></tr>{% endfor %}
   </tbody></table></div></div>{% endif %}
+
+{% elif tab == 'profiles' %}
+<div class="card">
+  <div class="card-h"><h2>Member profile forms</h2>
+    <div class="chips">{% for key, label, n in kyc_filters %}
+      <a class="chip {% if kyc_filt == key %}on{% endif %}" href="?tab=profiles{% if key %}&kyc={{ key }}{% endif %}">{{ label }} <span class="muted">{{ n }}</span></a>{% endfor %}
+    </div></div>
+  <div class="msg info" style="margin:0 0 6px">
+    {% if g.require_kyc %}This Equb asks each member for their <b>photo, ID and monthly income</b> after
+      <b>{{ g.kyc_after_payments }} payment{{ g.kyc_after_payments|pluralize }}</b>. Members who have not sent it (or were rejected) are kept out of the draw.
+    {% else %}The profile form is <b>turned off</b> for this Equb – forms below were sent for other Equbs. Turn it on with <a href="{% url 'console:equb_edit' g.slug %}">Edit</a>.{% endif %}
+    {% if kyc_monthly_cost %} One place here costs about <b>{{ kyc_monthly_cost|money }}</b> a month.{% endif %}
+  </div>
+</div>
+
+{% for r in kyc_rows %}
+<div class="card mt kyc-card {% if r.p.status == 'SUBMITTED' %}kyc-review{% elif r.p.status == 'REJECTED' %}kyc-rejected{% endif %}">
+  <div class="kyc-row">
+    <div class="kyc-pics">
+      {% if r.p %}
+        <a href="{% url 'console:kyc_photo' r.m.user_id 'photo' %}" target="_blank" title="Open full size"><img class="kyc-photo" src="{% url 'console:kyc_photo' r.m.user_id 'photo' %}" alt="Member photo" loading="lazy"></a>
+        {% if r.has_id %}<a href="{% url 'console:kyc_photo' r.m.user_id 'id' %}" target="_blank" title="Open full size"><img class="kyc-id" src="{% url 'console:kyc_photo' r.m.user_id 'id' %}" alt="ID card" loading="lazy"></a>
+        {% else %}<div class="kyc-id kyc-none">No ID picture</div>{% endif %}
+      {% else %}<div class="kyc-photo kyc-none">No photo</div>{% endif %}
+    </div>
+    <div class="kyc-info">
+      <div class="kyc-head">
+        <a class="strong" href="{% url 'console:equb_member' r.m.pk %}">{{ r.m.user.full_name|default:r.m.user.phone }}</a>
+        {% if r.p %}{{ r.p.status|status_badge:r.p.get_status_display }}{% else %}<span class="badge b-grey">Not sent</span>{% endif %}
+      </div>
+      <div class="small muted">Place #{{ r.m.position }} · {{ r.m.user.phone|tel }} · {{ r.s.paid_rounds }} payment{{ r.s.paid_rounds|pluralize }} made
+        {% if g.require_kyc and not r.p %}· {% if r.due %}<span style="color:var(--red)">form is due now – out of the draw</span>{% else %}asked after {{ r.payments_left }} more payment{{ r.payments_left|pluralize }}{% endif %}{% endif %}</div>
+      {% if r.p %}
+      <dl class="kv kyc-kv">
+        <dt>National ID</dt><dd class="mono">{{ r.p.national_id }}</dd>
+        <dt>Monthly income</dt><dd>{{ r.p.monthly_income|money }}{% if r.share is not None %} <span class="small {% if r.share > 50 %}strong{% endif %}" style="{% if r.share > 50 %}color:var(--red){% else %}color:var(--muted){% endif %}">· this Equb ≈ {{ r.share }}% of income</span>{% endif %}</dd>
+        <dt>Sent</dt><dd>{{ r.p.submitted_at|date:"d M Y, H:i" }}</dd>
+        {% if r.p.reviewed_at %}<dt>Reviewed</dt><dd>{{ r.p.reviewed_by.full_name|default:"Staff" }} · {{ r.p.reviewed_at|date:"d M Y, H:i" }}{% if r.p.review_note %}<div class="small muted">“{{ r.p.review_note }}”</div>{% endif %}</dd>{% endif %}
+      </dl>
+      {% endif %}
+    </div>
+    {% if r.p %}
+    <form method="post" class="kyc-actions">{% csrf_token %}
+      <input type="hidden" name="user" value="{{ r.m.user_id }}"><input type="hidden" name="kyc" value="{{ kyc_filt }}">
+      <input name="note" maxlength="200" placeholder="Reason (shown to the member if rejected)">
+      <div class="kyc-btns">
+        {% if r.p.status != 'APPROVED' %}<button class="btn sm" name="action" value="kyc_approve">Approve</button>{% endif %}
+        {% if r.p.status != 'REJECTED' %}<button class="btn danger sm" name="action" value="kyc_reject" data-confirm-click="Reject this profile form? The member will be asked to send it again.">Reject – ask again</button>{% endif %}
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% empty %}
+<div class="card mt"><div class="empty">No members in this list.</div></div>
+{% endfor %}
 
 {% elif tab == 'draws' %}
 <div class="card">

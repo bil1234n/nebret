@@ -9,10 +9,10 @@ register = template.Library()
 
 TONES = {
     "green": {"CONFIRMED", "SUCCESS", "PAID", "ACTIVE", "DRAWN", "LIVE", "ISSUED", "WON", "SCHEDULED", "AVAILABLE", "REDEEMED",
-              "OPEN", "PAID_OUT", "COMPLETED", "INSTALLMENTS", "ANSWERED", "SOLD"},
+              "OPEN", "PAID_OUT", "COMPLETED", "INSTALLMENTS", "ANSWERED", "SOLD", "APPROVED"},
     "gold": {"PENDING_PAYMENT", "PENDING", "COLLECTING", "INITIATED", "CLOSED", "HELD", "WAIVED", "RESERVED", "UPCOMING",
-             "DRAFT", "SOLD_OUT"},
-    "red": {"FAILED", "CANCELLED", "LATE", "DEFAULTED", "EXPIRED", "VOID", "REFUNDED", "BLOCKED", "SUSPENDED", "ARCHIVED"},
+             "DRAFT", "SOLD_OUT", "SUBMITTED"},
+    "red": {"FAILED", "CANCELLED", "LATE", "DEFAULTED", "EXPIRED", "VOID", "REFUNDED", "BLOCKED", "SUSPENDED", "ARCHIVED", "REJECTED"},
 }
 LABELS = {"DEFAULTED": "Terminated", "WAIVED": "From credit", "PAID_OUT": "Paid out", "WON": "Won"}
 
