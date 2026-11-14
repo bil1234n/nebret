@@ -499,31 +499,41 @@ class DisbursementForm(StyledMixin, forms.Form):
 
 
 class GiveawayForm(StyledMixin, forms.ModelForm):
-    """Community Giveaway: 100% paid by Nebret or a sponsor. Entry is free – earned only by inviting friends."""
+    """Community Giveaway: Nebret is always the sponsor; a partner may provide the prize. Entry is free – earned only
+    by inviting friends. The app shows the official rules (built from these settings) – App Store guideline 5.3."""
 
     sections = [
         ("Giveaway", "", ["title", "description", "image_url", "is_featured"]),
-        ("Sponsor", "Who pays for the prize. Donations are never used for giveaways.",
+        ("Prize provider", "Nebret is always the sponsor of the giveaway (Apple requires this). If a partner company "
+                           "pays for the prize, choose 'A partner provides the prize' – the app then shows "
+                           "'Prize provided by …'. Donations are never used for giveaways.",
          ["sponsor_type", "sponsor_name", "sponsor_note", "sponsor_logo_url"]),
         ("Prize", "Winners receive this as credit on a marketplace order or as paid Equb contributions.",
          ["prize_type", "prize_title", "prize_value", "number_of_winners", "prize_listing", "prize_equb_group"]),
         ("Free entries", "Nobody pays to enter. Each person earns an entry for every N friends who register on Nebret "
                          "with their referral code while the giveaway is running.", ["referrals_per_entry", "max_entries_per_user"]),
         ("Schedule", "", ["starts_at", "ends_at", "draw_at", "status"]),
+        ("Official rules", "The app always shows full official rules made from the settings above: Nebret as sponsor, "
+                           "the statement that Apple is not involved, free entry, who can enter, the prize and the "
+                           "fair draw. Add anything extra for this giveaway here.", ["rules"]),
     ]
 
     class Meta:
         model = Giveaway
         fields = ["title", "description", "image_url", "is_featured", "sponsor_type", "sponsor_name", "sponsor_note",
                   "sponsor_logo_url", "prize_type", "prize_title", "prize_value", "number_of_winners", "prize_listing",
-                  "prize_equb_group", "referrals_per_entry", "max_entries_per_user", "starts_at", "ends_at", "draw_at", "status"]
+                  "prize_equb_group", "referrals_per_entry", "max_entries_per_user", "starts_at", "ends_at", "draw_at", "status",
+                  "rules"]
         labels = {"prize_value": "Prize value per winner (ETB)", "referrals_per_entry": "Friends who register = 1 free entry",
                   "max_entries_per_user": "Most entries per person", "is_featured": "Feature on the app home screen",
-                  "image_url": "Image URL", "sponsor_logo_url": "Sponsor logo URL", "prize_listing": "Prize item (listing)",
-                  "prize_equb_group": "Prize Equb group", "sponsor_type": "Paid by"}
+                  "image_url": "Image URL", "prize_listing": "Prize item (listing)",
+                  "prize_equb_group": "Prize Equb group", "sponsor_type": "Who provides the prize",
+                  "sponsor_name": "Prize provider name", "sponsor_logo_url": "Prize provider logo URL",
+                  "rules": "Additional rules (optional)"}
         help_texts = {"max_entries_per_user": "Leave empty for no limit."}
-        widgets = {k: forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")
-                   for k in ("starts_at", "ends_at", "draw_at")}
+        widgets = {**{k: forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")
+                      for k in ("starts_at", "ends_at", "draw_at")},
+                   "rules": forms.Textarea(attrs={"rows": 4})}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

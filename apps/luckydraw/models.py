@@ -182,7 +182,10 @@ class GiveawayQuerySet(models.QuerySet):
 
 
 class Giveaway(TimeStampedModel):
-    """A promotional prize paid by Nebret or a sponsor. Entries are free – earned only by inviting friends."""
+    """
+    A promotional prize. Nebret is always the sponsor (App Store guideline 5.3.1); a partner may *provide* the prize.
+    Entries are free – earned only by inviting friends. The official rules shown in the app come from ``rules.py``.
+    """
 
     class Status(models.TextChoices):
         SCHEDULED = "SCHEDULED", "Scheduled"
@@ -197,8 +200,8 @@ class Giveaway(TimeStampedModel):
         EQUB_CONTRIBUTION = "EQUB_CONTRIBUTION", "Paid Equb contributions"
 
     class SponsorType(models.TextChoices):
-        COMPANY = "COMPANY", "Nebret marketing budget"
-        CORPORATE = "CORPORATE", "Corporate sponsor"
+        COMPANY = "COMPANY", "Nebret provides the prize"
+        CORPORATE = "CORPORATE", "A partner provides the prize (Nebret stays the sponsor)"
 
     title = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True, blank=True)
@@ -206,9 +209,12 @@ class Giveaway(TimeStampedModel):
     image_url = models.URLField(blank=True)
 
     sponsor_type = models.CharField(max_length=10, choices=SponsorType.choices, default=SponsorType.COMPANY)
-    sponsor_name = models.CharField(max_length=120, default="Nebret")
-    sponsor_note = models.CharField(max_length=255, blank=True, help_text="e.g. 'Fully paid by Awash Bank'")
+    sponsor_name = models.CharField(max_length=120, default="Nebret",
+                                    help_text="Who provides the prize – shown as 'Prize provided by …' when it is a partner")
+    sponsor_note = models.CharField(max_length=255, blank=True, help_text="e.g. 'Prize provided by Awash Bank'")
     sponsor_logo_url = models.URLField(blank=True)
+    rules = models.TextField(blank=True, help_text="Extra rules for this giveaway. They are added to the official "
+                                                   "rules the app shows (sponsor, Apple statement, entry, prize, draw).")
 
     prize_type = models.CharField(max_length=18, choices=PrizeType.choices)
     prize_title = models.CharField(max_length=120, help_text="e.g. 'Electric delivery bike'")

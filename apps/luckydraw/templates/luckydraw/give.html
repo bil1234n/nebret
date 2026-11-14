@@ -1,0 +1,80 @@
+{% extends "accounts/_page.html" %}
+{% block title %}Donate – {{ campaign.title }}{% endblock %}
+{% block heading %}{{ campaign.title }}{% endblock %}
+{% block sub %}<p>For {{ campaign.beneficiary_name }} · {{ campaign.raised_amount|floatformat:"0g" }} of {{ campaign.goal_amount|floatformat:"0g" }} ETB raised</p>{% endblock %}
+{% block content %}
+<style>
+  .presets{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px}
+  .presets label{margin:0;border:1.5px solid #D6E0DA;border-radius:12px;padding:12px 6px;text-align:center;font-weight:700;cursor:pointer}
+  .presets input{display:none}
+  .presets input:checked+span{color:#fff}
+  .presets label:has(input:checked){background:var(--g);border-color:var(--g);color:#fff}
+  input[type=number]{width:100%;padding:12px 14px;border:1.5px solid #D6E0DA;border-radius:12px;font:inherit;font-size:16px}
+  .lines{margin-top:16px;border-top:1px solid var(--line)}
+  .line{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
+  .line.total{font-weight:800;font-size:17px;color:var(--g)}
+  .btn{margin-top:18px;width:100%;background:var(--g);color:#fff;border:0;border-radius:12px;padding:14px;font:inherit;font-weight:700;font-size:16px;cursor:pointer;display:block;text-align:center;text-decoration:none}
+  .btn.light{background:var(--soft);color:var(--g)}
+</style>
+
+{% if expired %}
+  <div class="card">
+    <h2 style="margin-top:0">This link has expired</h2>
+    <p>For your security, donation links work for a short time only. Go back to the Nebret app, open the campaign and tap
+      <b>Donate on the website</b> again.</p>
+    <a class="btn" href="{{ deep_link }}">Open the Nebret app</a>
+  </div>
+{% elif closed %}
+  <div class="card">
+    <h2 style="margin-top:0">This campaign is not accepting donations</h2>
+    <p>{% if campaign.status == "FUNDED" %}It has reached its goal – thank you to everyone who gave.{% else %}It has closed.{% endif %}</p>
+    <a class="btn" href="{{ deep_link }}">Back to the Nebret app</a>
+  </div>
+{% else %}
+  {% if campaign.story %}<p>{{ campaign.story|linebreaksbr }}</p>{% endif %}
+  <form method="post" class="card">
+    {% csrf_token %}
+    {{ form.t }}
+    {% if form.non_field_errors %}<div class="errors">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <p class="muted" style="margin-top:0">Giving as <b>{{ donor.full_name|default:donor.phone }}</b></p>
+
+    <label>Choose an amount (ETB)</label>
+    <div class="presets">
+      {% for p in presets %}
+        <label><input type="radio" name="preset" value="{{ p }}" onclick="setAmount({{ p }})"{% if form.amount.value|stringformat:"s" == p|stringformat:"s" %} checked{% endif %}><span>{{ p }}</span></label>
+      {% endfor %}
+    </div>
+    <label for="id_amount">Or enter your own (at least {{ campaign.min_donation }} ETB)</label>
+    <input type="number" name="amount" id="id_amount" min="{{ campaign.min_donation }}" max="1000000" step="1" required
+           value="{{ form.amount.value|default:'' }}" oninput="update()">
+    {% if form.amount.errors %}<div class="errors">{{ form.amount.errors|join:" " }}</div>{% endif %}
+
+    <div class="lines">
+      <div class="line"><span>Your gift – goes 100% to the cause</span><b id="gift">—</b></div>
+      <div class="line"><span>Platform fee ({{ fee_percent|floatformat:"-2" }}%)</span><span id="fee">—</span></div>
+      <div class="line total"><span>Total to pay</span><span id="total">—</span></div>
+    </div>
+
+    <label for="id_message">{{ form.message.label }}</label>
+    {{ form.message }}
+    <label class="check"><input type="checkbox" name="is_anonymous"{% if form.is_anonymous.value %} checked{% endif %}> Give anonymously</label>
+
+    <button type="submit" class="btn">Continue to secure payment</button>
+    <p class="muted">You will pay with Chapa (telebirr, CBE Birr, bank cards and more). Afterwards you can go straight back to the app.</p>
+  </form>
+  <script>
+    var FEE = {{ fee_percent|stringformat:"s" }};
+    function fmt(n){ return n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + " ETB"; }
+    function setAmount(v){ document.getElementById("id_amount").value = v; update(); }
+    function update(){
+      var a = parseInt(document.getElementById("id_amount").value, 10);
+      if (!a || a < {{ campaign.min_donation }}) { ["gift","fee","total"].forEach(function(i){ document.getElementById(i).textContent = "—"; }); return; }
+      var fee = Math.round(a * FEE) / 100;
+      document.getElementById("gift").textContent = fmt(a);
+      document.getElementById("fee").textContent = fmt(fee);
+      document.getElementById("total").textContent = fmt(a + fee);
+    }
+    update();
+  </script>
+{% endif %}
+{% endblock %}

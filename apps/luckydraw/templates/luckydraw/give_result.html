@@ -1,0 +1,21 @@
+{% extends "accounts/_page.html" %}
+{% block title %}{% if success %}Thank you{% else %}Payment{% endif %}{% endblock %}
+{% block heading %}{% if success %}Thank you for your gift{% elif pending %}Waiting for your payment{% else %}Payment not completed{% endif %}{% endblock %}
+{% block content %}
+<style>
+  .btn{margin-top:18px;width:100%;background:var(--g);color:#fff;border:0;border-radius:12px;padding:14px;font:inherit;font-weight:700;font-size:16px;display:block;text-align:center;text-decoration:none}
+</style>
+<div class="card">
+  {% if success %}
+    <p>Your donation of <b>{{ donation.amount|floatformat:2 }} ETB</b> to <b>{{ donation.campaign.title }}</b> has been received.
+      It goes 100% to the cause.</p>
+  {% elif pending %}
+    <p>We have not received the confirmation from the payment provider yet. This usually takes a few seconds –
+      refresh this page, or go back to the app and check the campaign.</p>
+  {% else %}
+    <p>The payment was not completed and no money was taken. You can go back to the app and try again.</p>
+  {% endif %}
+  <a class="btn" href="{{ deep_link }}">Back to the Nebret app</a>
+  <p class="muted">Reference: {{ txn.reference }}</p>
+</div>
+{% endblock %}

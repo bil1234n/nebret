@@ -10,7 +10,7 @@
 </div>
 
 {% if tab == 'giveaways' %}
-<div class="note-box" style="margin-bottom:18px">Giveaways are paid for entirely by Nebret's marketing budget or a sponsor. Nobody pays to enter – every <b>{{ settings_refs|default:"10" }} friends</b> someone invites who register on Nebret earn them <b>one free entry</b>. Donations are never used for giveaways.</div>
+<div class="note-box" style="margin-bottom:18px">Nebret is the sponsor of every giveaway (a partner may provide the prize), and the app shows each giveaway's official rules. Nobody pays to enter – every <b>{{ settings_refs|default:"10" }} friends</b> someone invites who register on Nebret earn them <b>one free entry</b>. Donations are never used for giveaways.</div>
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Live giveaways</div><div class="value">{{ kpi.live }}</div><div class="sub">{{ kpi.winners }} winner{{ kpi.winners|pluralize }} so far</div></div>
   <div class="card kpi"><div class="label">Free entries earned</div><div class="value">{{ kpi.entries }}</div><div class="sub">from {{ kpi.referrals }} referral{{ kpi.referrals|pluralize }}</div></div>
@@ -22,7 +22,7 @@
   <div class="card-h"><h2>All giveaways</h2>
     <div class="chips"><a class="chip {% if not status %}on{% endif %}" href="?">All</a>{% for k, l in statuses %}<a class="chip {% if status == k %}on{% endif %}" href="?status={{ k }}">{{ l|cut:" – collecting referrals"|cut:" – awaiting draw" }}</a>{% endfor %}</div></div>
   <div class="table-wrap"><table class="t">
-    <thead><tr><th>Giveaway</th><th>Sponsor</th><th>Prize</th><th class="r">Referrals</th><th class="r">Free entries</th><th>Draw</th><th>Status</th></tr></thead>
+    <thead><tr><th>Giveaway</th><th>Prize provider</th><th>Prize</th><th class="r">Referrals</th><th class="r">Free entries</th><th>Draw</th><th>Status</th></tr></thead>
     <tbody>{% for g in gives %}<tr>
       <td><a class="strong" href="{% url 'console:giveaway' g.slug %}">{{ g.title }}</a><div class="small muted">{{ g.referrals_per_entry }} friends = 1 entry{% if g.is_featured %} · ★ featured{% endif %}</div></td>
       <td>{{ g.sponsor_name }}<div class="small muted">{{ g.get_sponsor_type_display }}</div></td>

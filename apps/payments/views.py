@@ -117,8 +117,25 @@ class PaymentReturnView(APIView):
         txn = get_object_or_404(PaymentTransaction, reference=reference)
         txn = refresh_from_provider(txn)
         deep_link = f"{settings.NEBRET['APP_DEEP_LINK']}?reference={txn.reference}&status={txn.status}"
+        if (txn.purpose == PaymentTransaction.Purpose.DONATION and not request.query_params.get("redirect")
+                and "text/html" in request.headers.get("Accept", "")):
+            # A donation made on the website from the iPhone app (Safari): show a thank-you page, not JSON.
+            # (The Android app never loads this URL – its in-app checkout stops as soon as it is reached.)
+            return self._donation_page(request, txn, deep_link)
         return HttpResponseRedirect(deep_link) if request.query_params.get("redirect") else Response(
             {"reference": str(txn.reference), "status": txn.status, "deep_link": deep_link})
+
+    @staticmethod
+    def _donation_page(request, txn, deep_link):
+        from django.shortcuts import render
+
+        from apps.accounts.web import _context
+        from apps.luckydraw.models import Donation
+
+        S = PaymentTransaction.Status
+        return render(request, "luckydraw/give_result.html", _context(
+            txn=txn, donation=Donation.objects.select_related("campaign").filter(pk=txn.object_id).first(),
+            success=txn.status == S.SUCCESS, pending=txn.status in (S.INITIATED, S.PENDING), deep_link=deep_link))
 
 
 @method_decorator(csrf_exempt, name="dispatch")

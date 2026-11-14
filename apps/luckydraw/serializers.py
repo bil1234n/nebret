@@ -58,6 +58,10 @@ class GiveawaySerializer(serializers.ModelSerializer):
     sponsor_type_display = serializers.CharField(source="get_sponsor_type_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     my_progress = serializers.SerializerMethodField()
+    organizer_name = serializers.SerializerMethodField()
+    prize_provider = serializers.SerializerMethodField()
+    apple_statement = serializers.SerializerMethodField()
+    official_rules = serializers.SerializerMethodField()
 
     class Meta:
         model = Giveaway
@@ -65,7 +69,29 @@ class GiveawaySerializer(serializers.ModelSerializer):
                   "sponsor_note", "sponsor_logo_url", "prize_type", "prize_type_display", "prize_title", "prize_value",
                   "prize_listing", "number_of_winners", "referrals_per_entry", "max_entries_per_user", "starts_at",
                   "ends_at", "draw_at", "status", "status_display", "is_live", "is_featured", "entries_issued",
-                  "participants_count", "referrals_count", "seed_commitment", "my_progress"]
+                  "participants_count", "referrals_count", "seed_commitment", "my_progress", "organizer_name",
+                  "prize_provider", "apple_statement", "official_rules"]
+
+    # App Store guideline 5.3: Nebret is the sponsor, the official rules are in the app, Apple is not involved.
+    def get_organizer_name(self, obj) -> str:
+        from .rules import organizer_name
+
+        return organizer_name()
+
+    def get_prize_provider(self, obj) -> str:
+        from .rules import prize_provider
+
+        return prize_provider(obj)
+
+    def get_apple_statement(self, obj) -> str:
+        from .rules import APPLE_STATEMENT
+
+        return APPLE_STATEMENT
+
+    def get_official_rules(self, obj) -> list[dict]:
+        from .rules import official_rules
+
+        return official_rules(obj)
 
     def get_my_progress(self, obj) -> dict | None:
         req = self.context.get("request")

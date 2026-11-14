@@ -30,7 +30,8 @@ def terms_of_service(request):
     return render(request, "accounts/terms.html", _context(
         hold_minutes=rules["RESERVATION_HOLD_MINUTES"], payment_window=rules["ORDER_PAYMENT_WINDOW_MINUTES"],
         grace_days=rules["INSTALLMENT_GRACE_DAYS"], max_months=rules["MAX_INSTALLMENT_MONTHS"],
-        crowdfund_fee=rules["CROWDFUND_FEE_PERCENT"], referrals_per_entry=rules["REFERRALS_PER_GIVEAWAY_ENTRY"]))
+        crowdfund_fee=rules["CROWDFUND_FEE_PERCENT"], referrals_per_entry=rules["REFERRALS_PER_GIVEAWAY_ENTRY"],
+        legal_name=rules["COMPANY_LEGAL_NAME"]))
 
 
 class DeleteAccountForm(forms.Form):

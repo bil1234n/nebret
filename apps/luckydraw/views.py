@@ -55,6 +55,17 @@ class CrowdfundingViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({"donation": DonationSerializer(donation).data, "payment": PaymentTransactionSerializer(txn).data},
                         status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"], url_path="web-link", permission_classes=[permissions.IsAuthenticated],
+            throttle_classes=[DonationThrottle])
+    def web_link(self, request, slug=None):
+        """iPhone: a signed, short-lived link to give on the website in Safari (App Store guideline 3.2.2(iv))."""
+        from django.conf import settings
+
+        from .web import web_link
+
+        return Response({"url": web_link(request, request.user, self.get_object()),
+                         "expires_in_minutes": settings.NEBRET["WEB_DONATION_LINK_MINUTES"]})
+
     @action(detail=True, methods=["get"], permission_classes=[permissions.AllowAny])
     def donors(self, request, slug=None):
         c = self.get_object()

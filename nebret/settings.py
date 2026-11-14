@@ -241,6 +241,12 @@ NEBRET = {
     # Shown on /privacy/ and /account/delete/ – set SUPPORT_EMAIL to the inbox you really read.
     "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@nebret.et"),
     "PRIVACY_UPDATED": env("PRIVACY_UPDATED", "6 November 2026"),
+    # The legal entity that runs Nebret – the sponsor of every giveaway (App Store guideline 5.3.1).
+    "COMPANY_LEGAL_NAME": env("COMPANY_LEGAL_NAME", "NIYA FINANCIAL TECHNOLOGIES PLC"),
+    # iPhone donations are completed on the website (/give/<slug>/) in Safari, never inside the app
+    # (App Store guideline 3.2.2(iv)). The link the app opens is signed and valid for this many minutes.
+    "WEB_DONATION_PROVIDER": env("WEB_DONATION_PROVIDER", "mock" if DEBUG else "chapa"),
+    "WEB_DONATION_LINK_MINUTES": int(env("WEB_DONATION_LINK_MINUTES", 30)),
 }
 
 # --- Payment gateways ------------------------------------------------------
