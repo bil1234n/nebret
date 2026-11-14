@@ -202,6 +202,8 @@ def equb_detail(request, slug):
            "rules": rules_summary(g, EqubSettings.load()),
            "arrears": sum((standings[m.id].arrears for m in members), Decimal("0")),
            "credit": sum((standings[m.id].credit for m in members), Decimal("0"))}
+    # everything members have paid into this Equb: money that went to rounds + credit still held for later rounds
+    ctx["total_paid"] = Decimal(ctx["totals"]["total_collected"] or 0) + ctx["credit"]
     ctx["kyc_pending"] = _kyc_pending_count(g, members)
     if tab == "profiles":
         ctx.update(_kyc_tab(request, g, members, standings))

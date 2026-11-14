@@ -17,8 +17,8 @@
 </div>
 
 <div class="strip mt">
-  <div><div class="label">Behind</div><div class="value {% if behind_count %}red{% endif %}">{{ behind_count }}</div><div class="sub">of {{ members_count }} members</div></div>
-  <div><div class="label">Arrears</div><div class="value {% if arrears %}red{% endif %}">{{ arrears|money }}</div></div>
+  <div><div class="label">Behind</div><div class="value {% if behind_count %}red{% endif %}">{{ behind_count }}</div><div class="sub">of {{ members_count }} members{% if arrears %} · <span style="color:var(--red)">{{ arrears|money }} owed</span>{% endif %}</div></div>
+  <div><div class="label">Total paid</div><div class="value">{{ total_paid|money }}</div><div class="sub">{{ totals.total_collected|money }} rounds · {{ credit|money }} credit · {{ totals.payouts_total|money }} paid out</div></div>
   <div><div class="label">Credit held</div><div class="value green">{{ credit|money }}</div><div class="sub">paid ahead by members</div></div>
   <div><div class="label">Payouts</div><div class="value">{{ totals.payouts_total|money }}</div><div class="sub">{{ totals.payouts_issued }} winner{{ totals.payouts_issued|pluralize }}</div></div>
   <div><div class="label">Service fees</div><div class="value">{{ totals.service_fees|money }}</div></div>
