@@ -56,7 +56,7 @@ class EqubGroupViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        qs = EqubGroup.objects.select_related("organizer", "equb_package")
+        qs = EqubGroup.objects.select_related("organizer", "equb_package", "listing__company")
         qp = self.request.query_params
         if qp.get("package"):
             qs = qs.filter(equb_package__slug=qp["package"])

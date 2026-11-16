@@ -199,7 +199,10 @@ class Listing(TimeStampedModel):
 
     @property
     def product_equb_open(self) -> bool:
-        return self.equb_groups.filter(status="OPEN").exists()
+        """A product Equb people can still join (open, or running with free places)."""
+        from apps.equb.product import joinable_groups
+
+        return bool(joinable_groups(self))
 
     @property
     def seller_name(self) -> str:

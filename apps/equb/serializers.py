@@ -95,16 +95,25 @@ class EqubGroupListSerializer(serializers.ModelSerializer):
     frequency_display = serializers.CharField(source="get_frequency_display", read_only=True)
     spots_left = serializers.SerializerMethodField()
     duration_label = serializers.CharField(read_only=True)
+    product = serializers.SerializerMethodField()
 
     class Meta:
         model = EqubGroup
-        fields = ["id", "equb_package", "name", "slug", "contribution_amount", "frequency", "frequency_days",
+        fields = ["id", "equb_package", "product", "name", "slug", "contribution_amount", "frequency", "frequency_days",
                   "frequency_display", "duration_value", "duration_unit", "duration_label", "max_members",
                   "members_count", "spots_left", "pot_per_round", "payout_per_winner", "total_rounds", "current_round",
                   "status", "start_date", "end_date", "draw_type", "rounds_drawn", "winners_per_round", "price_per_person"]
 
     def get_spots_left(self, obj) -> int:
         return max(obj.max_members - obj.members_count, 0)
+
+    def get_product(self, obj) -> dict | None:
+        """The item every member wins in a product Equb ("Win this with Equb")."""
+        if not obj.listing_id:
+            return None
+        l = obj.listing
+        return {"slug": l.slug, "title": l.title, "image_url": l.image_url, "seller": l.seller_name,
+                "price": str(obj.product_price or l.price)}
 
 
 class MyMembershipSerializer(serializers.ModelSerializer):

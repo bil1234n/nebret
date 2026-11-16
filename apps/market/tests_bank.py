@@ -515,7 +515,7 @@ class ProductEqubTests(Base):
         self.assertEqual(rows[0]["spots_left"], 2)
         EqubGroup.objects.filter(pk=g.pk).update(max_members=0)  # no places left
         self.assertEqual(self.api.get(f"/api/market/listings/{self.listing.slug}/").data["equb_groups"], [])
-        EqubGroup.objects.filter(pk=g.pk).update(max_members=2, status="ACTIVE")  # running, not open
+        EqubGroup.objects.filter(pk=g.pk).update(status="COMPLETED")  # finished – nobody can join any more
         self.assertEqual(self.api.get(f"/api/market/listings/{self.listing.slug}/").data["equb_groups"], [])
         with self.assertRaises(BusinessRuleError):  # agents can't create product Equbs
             product.create_product_equb(self.listing, self.agent, contribution_amount=2000, duration_value=60,

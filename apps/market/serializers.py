@@ -141,21 +141,21 @@ class ListingListSerializer(serializers.ModelSerializer):
 
 
 def equb_group_rows(listing: Listing) -> list[dict]:
-    """Open product Equbs for a listing that still have places ("Win this with Equb")."""
-    from apps.equb.models import EqubGroup
+    """Product Equbs for a listing people can still join ("Win this with Equb")."""
+    from apps.equb.product import joinable_groups
 
     out = []
-    for g in EqubGroup.objects.filter(listing=listing, status=EqubGroup.Status.OPEN).order_by("start_date"):
+    for g in joinable_groups(listing):
         left = g.spots_left
-        if left <= 0:
-            continue
         nxt = g.rounds.filter(status__in=["UPCOMING", "COLLECTING"]).order_by("number").first()
         out.append({"slug": g.slug, "name": g.name, "contribution_amount": str(g.contribution_amount),
                     "frequency": g.frequency, "frequency_label": g.get_frequency_display(), "every": g.every,
                     "members": g.max_members, "spots_left": left, "start_date": g.start_date,
                     "next_draw": nxt.draw_date if nxt else g.start_date, "total_rounds": g.total_rounds,
                     "product_price": str(g.product_price or listing.price),
-                    "payout_per_winner": str(g.payout_per_winner)})
+                    "payout_per_winner": str(g.payout_per_winner), "joined": g.members_count,
+                    "running": g.status == "ACTIVE", "payments": g.duration_value or g.total_rounds,
+                    "service_fee_percent": str(g.service_fee_percent)})
     return out
 
 

@@ -17,6 +17,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from apps.agencies.forms import ListingForm, SaleForm, UnitsForm
+from apps.equb.product import listing_overview
 from apps.agencies.models import Agency
 from apps.market.models import Category, Inquiry, Installment, Listing, ListingUnit, Order
 from apps.market.services import handover as handover_svc
@@ -320,7 +321,7 @@ def listing_detail(request, pk):
         s=Sum("amount_paid"))["s"] or 0
     return render(request, "console/listing_detail.html", {
         "nav": "listings", "l": listing, "units": units, "units_form": units_form, "stock": stock, "revenue": revenue,
-        "sold_pct": pct(stock.get("SOLD", 0), len(units)),
+        "sold_pct": pct(stock.get("SOLD", 0), len(units)), "equbs": listing_overview(listing),
         "orders": listing.orders.select_related("user", "unit").order_by("-created_at")[:30],
         "inquiries": listing.inquiries.select_related("user")[:10]})
 

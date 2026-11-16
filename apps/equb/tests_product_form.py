@@ -100,3 +100,42 @@ class CompanyListingPhotosTests(TestCase):
             r = self.api.post("/api/company/uploads/photo/", {"file": f}, format="multipart")
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["url"], "https://res.cloudinary.com/x/p.jpg")
+
+
+class ProductEqubVisibilityTests(TestCase):
+    """Product Equbs show in the "Products" package, on the listing (app + console) – also once they've started."""
+
+    def setUp(self):
+        self.staff = make_user("Ops", staff=True)
+        self.listing = make_listing(price=Decimal("6900000"), units=3, company=make_company())
+        self.group, _ = product.create_product_equb(
+            self.listing, self.staff, contribution_amount="1005830.91", duration_value=7, duration_unit="MONTHS",
+            members=3, start_date=timezone.localdate())
+
+    def test_belongs_to_products_package_listed_in_the_app(self):
+        self.assertEqual(self.group.equb_package.slug, "products")
+        api = client_for(make_user("Buyer"))
+        pkgs = api.get("/api/equb/packages/").data
+        self.assertIn("products", [p["slug"] for p in pkgs])
+        rows = api.get("/api/equb/groups/?package=products").data
+        rows = rows.get("results", rows) if isinstance(rows, dict) else rows
+        self.assertEqual(rows[0]["product"]["slug"], self.listing.slug)
+
+    def test_running_group_with_places_still_shows_as_a_way_to_pay(self):
+        from apps.equb import services
+
+        services.start_group(self.group)
+        self.listing.refresh_from_db()
+        self.assertTrue(self.listing.product_equb_open)
+        rows = client_for(make_user("Buyer")).get(f"/api/market/listings/{self.listing.slug}/").data["equb_groups"]
+        self.assertEqual(rows[0]["slug"], self.group.slug)
+        self.assertTrue(rows[0]["running"])
+        self.assertEqual((rows[0]["joined"], rows[0]["spots_left"]), (0, 3))
+
+    def test_console_listing_page_shows_the_equb_and_its_numbers(self):
+        self.client.force_login(self.staff)
+        r = self.client.get(reverse("console:listing", args=[self.listing.pk]))
+        self.assertContains(r, self.group.name)
+        self.assertContains(r, "0 / 3")
+        self.assertContains(r, "3 in Equb")
+        self.assertContains(r, "taking members")

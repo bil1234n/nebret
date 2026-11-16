@@ -9,7 +9,7 @@
 {% block content %}
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Price</div><div class="value">{{ l.price|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{% if l.compare_at_price %}was {{ l.compare_at_price|money }}{% else %}{{ l.get_condition_display }}{% endif %}</div></div>
-  <div class="card kpi"><div class="label">Available</div><div class="value">{{ stock.AVAILABLE }}</div><div class="sub">{{ stock.HELD }} held · {{ stock.RESERVED }} reserved · {{ stock.BLOCKED }} blocked</div></div>
+  <div class="card kpi"><div class="label">Available</div><div class="value">{{ stock.AVAILABLE }}</div><div class="sub">{{ stock.HELD }} held · {{ stock.RESERVED }} reserved{% if stock.EQUB %} · {{ stock.EQUB }} in Equb{% endif %} · {{ stock.BLOCKED }} blocked</div></div>
   <div class="card kpi gold"><div class="label">Sold</div><div class="value">{{ stock.SOLD }}</div><div class="sub">{{ sold_pct }}% of stock · {{ l.views }} view{{ l.views|pluralize }}</div></div>
   <div class="card kpi"><div class="label">Collected</div><div class="value">{{ revenue|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">on live and completed orders</div></div>
 </div>
@@ -29,11 +29,33 @@
       <dt>Full payment</dt><dd>{% if l.allow_full_payment %}Yes{% else %}No{% endif %}</dd>
       <dt>Reservation</dt><dd>{% if l.allow_reservation and l.reservation_fee %}{{ l.reservation_fee|money }}, balance within {{ l.reservation_days }} days{% else %}No{% endif %}</dd>
       <dt>Installments</dt><dd>{% if l.allow_installments %}{{ l.min_down_payment_percent|floatformat:"-2" }}% down ({{ l.min_down_payment|money }}), up to {{ l.max_installment_months }} months{% if l.finance_rate_percent %}, {{ l.finance_rate_percent|floatformat:"-2" }}% a year flat{% else %}, interest-free{% endif %}{% else %}No{% endif %}</dd>
-      <dt>Product Equb</dt><dd>{% if l.product_equb_open %}Open – customers can win it{% else %}None open{% endif %}</dd>
+      <dt>Win with Equb</dt><dd>{% if l.product_equb_open %}Yes – customers can join and win it{% elif equbs %}{{ equbs|length }} Equb{{ equbs|pluralize }}, none taking members{% else %}No{% endif %} · <a href="#equbs">see below</a></dd>
       <dt>Handover</dt><dd>within {{ l.handover_days }} days of full payment{% if l.delivery_available %} · delivery {{ l.delivery_fee|money }}{% endif %}</dd>
       {% if l.warranty_months %}<dt>Warranty</dt><dd>{{ l.warranty_months }} months</dd>{% endif %}
     </dl></div>
 </div>
+<div class="card mt" id="equbs" style="border:2px solid var(--gold)">
+  <div class="card-h"><h2>Win this with Equb</h2><a class="btn sm" href="{% url 'console:listing_equb' l.pk %}">+ New product Equb</a></div>
+  {% if equbs %}
+  <div class="table-wrap"><table class="t"><thead><tr>
+    <th>Equb</th><th>Status</th><th class="r">Contribution</th><th>Members joined</th><th class="r">Winners</th><th>Rounds</th><th>Next draw</th><th class="r">Collected</th><th class="r">Payout / winner</th><th class="r">Units</th></tr></thead><tbody>
+  {% for e in equbs %}{% with g=e.group %}<tr>
+    <td><a class="strong" href="{% url 'console:equb' g.slug %}">{{ g.name }}</a><div class="small muted">{{ g.equb_package.name|default:"No package" }} · fee {{ e.fee|floatformat:"-2" }}% · starts {{ g.start_date|date:"d M Y" }}</div></td>
+    <td>{{ g.status|status_badge:g.get_status_display }}{% if e.joinable %}<div class="small" style="color:#14653D">taking members</div>{% endif %}</td>
+    <td class="r num">{{ g.contribution_amount|money }}<div class="small muted">{{ g.every }} × {{ g.duration_value|default:e.total_rounds }}</div></td>
+    <td style="min-width:150px"><div class="strong">{{ e.joined }} / {{ e.max }}</div>
+      <div style="height:6px;border-radius:99px;background:var(--line);margin-top:4px;overflow:hidden"><div style="height:100%;width:{{ e.fill_pct }}%;background:var(--gold)"></div></div>
+      <div class="small muted">{{ e.spots_left }} place{{ e.spots_left|pluralize }} left</div></td>
+    <td class="r num">{{ e.winners }}</td>
+    <td class="small">{{ e.rounds_done }} / {{ e.total_rounds }} drawn</td>
+    <td class="small">{{ e.next_draw|date:"d M Y"|default:"—" }}</td>
+    <td class="r num">{{ e.collected|money }}</td>
+    <td class="r num">{{ e.payout|money }}<div class="small {% if e.payout >= e.price %}muted{% else %}red{% endif %}">price {{ e.price|money }}</div></td>
+    <td class="r num">{{ e.units_reserved }}</td></tr>{% endwith %}
+  {% endfor %}</tbody></table></div>
+  {% else %}<div class="empty">No product Equb yet. <a href="{% url 'console:listing_equb' l.pk %}">Create one →</a> – members pay a contribution and each one wins this item in a draw.</div>{% endif %}
+</div>
+
 <div class="grid g-21 mt">
   <div class="card"><div class="card-h"><h2>Units</h2><span>Each unit is one item a customer can buy</span></div>
     <div class="table-wrap"><table class="t"><thead><tr><th>Code</th><th>Label</th><th class="r">Price</th><th>Status</th><th></th></tr></thead><tbody>

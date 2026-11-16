@@ -31,6 +31,57 @@ log = logging.getLogger(__name__)
 CENT = Decimal("0.01")
 
 
+PRODUCTS_PACKAGE_SLUG = "products"
+PRODUCTS_PACKAGE_TERMS = (
+    "Every member pays the same contribution every round and wins the product in a draw – every member wins once.\n"
+    "The product price is fixed when the group is created; the seller reserves one unit for every member.\n"
+    "The winner's order is created automatically and the product is handed over by the seller.")
+
+
+def products_package():
+    """The "Products" Equb package every product Equb belongs to (so it shows in the app's Equb tab)."""
+    from .models import EqubPackage
+
+    pkg = EqubPackage.objects.filter(slug=PRODUCTS_PACKAGE_SLUG).first()
+    if pkg is None:
+        pkg = EqubPackage.objects.create(name="Products", slug=PRODUCTS_PACKAGE_SLUG, terms_content=PRODUCTS_PACKAGE_TERMS)
+    return pkg
+
+
+JOINABLE = (EqubGroup.Status.OPEN, EqubGroup.Status.ACTIVE)
+
+
+def joinable_groups(listing) -> list[EqubGroup]:
+    """Product Equbs for a listing that people can still join (open, or running with free places)."""
+    return [g for g in EqubGroup.objects.filter(listing=listing, status__in=JOINABLE).order_by("start_date", "id")
+            if g.spots_left > 0]
+
+
+def listing_overview(listing) -> list[dict]:
+    """Every product Equb of a listing with its numbers – for the console and the company portal."""
+    from django.db.models import Sum
+
+    from .models import Contribution
+
+    rows = []
+    for g in (EqubGroup.objects.filter(listing=listing).exclude(status=EqubGroup.Status.CANCELLED)
+              .select_related("equb_package").order_by("-created_at")):
+        members = g.memberships.exclude(status=EqubMembership.Status.LEFT)
+        nxt = g.rounds.filter(status__in=["UPCOMING", "COLLECTING"]).order_by("number").first()
+        collected = (Contribution.objects.filter(round__group=g, status=Contribution.Status.PAID)
+                     .aggregate(s=Sum("amount"))["s"] or Decimal(0))
+        rows.append({
+            "group": g, "joined": members.count(), "spots_left": g.spots_left, "max": g.max_members,
+            "winners": members.filter(has_won=True).count(), "collected": collected,
+            "rounds_done": g.rounds.filter(status="DRAWN").count(), "total_rounds": g.total_rounds,
+            "next_draw": nxt.draw_date if nxt else None, "units_reserved": g.reserved_units.count(),
+            "payout": g.payout_per_winner, "price": g.product_price or listing.price,
+            "fee": g.service_fee_percent, "joinable": g.status in JOINABLE and g.spots_left > 0,
+            "fill_pct": round(100 * members.count() / g.max_members) if g.max_members else 0,
+        })
+    return rows
+
+
 def _can_create(user, listing) -> bool:
     if getattr(user, "is_staff", False):
         return True
@@ -158,7 +209,7 @@ def create_product_equb(listing, user, *, contribution_amount, duration_value: i
                       duration_value=duration_value, duration_unit=duration_unit, max_members=members,
                       rounds_drawn=rounds_drawn or None, start_date=start_date, draw_type=draw_type,
                       listing=listing, product_price=price, organizer=user, status=EqubGroup.Status.OPEN,
-                      service_fee_override=fee_override)
+                      service_fee_override=fee_override, equb_package=products_package())
     m = maths(price=price, contribution=contribution, duration_value=duration_value,
               fee_percent=group.service_fee_percent)
     if not m["covers_price"]:
