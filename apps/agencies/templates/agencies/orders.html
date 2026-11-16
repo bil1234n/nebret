@@ -12,7 +12,7 @@
   <thead><tr><th>Ref</th><th>Customer</th><th>Item</th><th>Plan</th><th>Status</th><th class="r">Paid</th><th class="r">Balance</th></tr></thead>
   <tbody>{% for o in page %}<tr>
     <td><a class="mono strong" href="{% url 'agency:order' o.reference %}">{{ o.reference }}</a><div class="small muted">{{ o.created_at|date:"d M Y" }}</div></td>
-    <td>{{ o.user.full_name }}<div class="small muted">{{ o.user.phone }}</div></td>
+    <td>{{ o.user.full_name }}<div class="small muted mono">{{ o.user.phone|mask_phone }}</div></td>
     <td>{{ o.listing.title }}<div class="small muted mono">{{ o.unit.code }}</div></td>
     <td>{{ o.get_plan_display }}{% if o.installment_months %}<div class="small muted">{{ o.installment_months }} months</div>{% endif %}</td>
     <td>{{ o.status|status_badge:o.get_status_display }}</td>

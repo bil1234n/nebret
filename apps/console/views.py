@@ -1,5 +1,5 @@
 """
-Nebret staff console — a server-rendered web dashboard for operations staff.
+Nebret Equb staff console — a server-rendered web dashboard for operations staff.
 
 Every page is staff-only. Charts are rendered client-side with Chart.js from a
 single JSON config emitted per page (see ``static/console/console.js``).
@@ -57,7 +57,7 @@ def staff_required(view):
             if staff_for(request.user):
                 return redirect("agency:dashboard")
             logout(request)
-            messages.error(request, "The console is for Nebret staff accounts only.")
+            messages.error(request, "The console is for Nebret Equb staff accounts only.")
             return redirect("console:login")
         return view(request, *args, **kwargs)
     return wrapper

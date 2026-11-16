@@ -199,7 +199,7 @@ class ListingForm(StyledMixin, forms.ModelForm):
         ("How customers can pay", "Offer at least one. Installments use a flat, fixed finance charge (0 = "
                                   "interest-free).",
          ["allow_full_payment", "allow_reservation", "reservation_fee", "reservation_days", "allow_installments",
-          "min_down_payment_percent", "max_installment_months", "finance_rate_percent", "allow_equb_payout"]),
+          "min_down_payment_percent", "max_installment_months", "finance_rate_percent"]),
         ("Handover", "", ["delivery_available", "delivery_fee", "handover_days", "warranty_months"]),
         ("Publishing", "", ["status", "is_featured"]),
     ]
@@ -210,7 +210,7 @@ class ListingForm(StyledMixin, forms.ModelForm):
                   "area", "address", "specs", "features", "image_url", "video_url", "price", "compare_at_price",
                   "allow_full_payment", "allow_reservation", "reservation_fee", "reservation_days",
                   "allow_installments", "min_down_payment_percent", "max_installment_months", "finance_rate_percent",
-                  "allow_equb_payout", "delivery_available", "delivery_fee", "handover_days", "warranty_months",
+                  "delivery_available", "delivery_fee", "handover_days", "warranty_months",
                   "status", "is_featured"]
         widgets = {"description": forms.Textarea(attrs={"rows": 5})}
         labels = {"image_url": "Cover picture link"}

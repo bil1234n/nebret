@@ -273,6 +273,12 @@ class EqubGroup(TimeStampedModel):
     join_code = models.CharField(max_length=8, unique=True, null=True, blank=True,
                                  help_text="Members can join with this code (needed for private pools).")
 
+    # --- product Equb ("Win this with Equb"): every member wins the product once -----------------------------
+    listing = models.ForeignKey("market.Listing", null=True, blank=True, on_delete=models.PROTECT,
+                                related_name="equb_groups", help_text="Product the winners receive (product Equb)")
+    product_price = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True,
+                                        help_text="Product price locked when the group was created")
+
     class Meta:
         ordering = ["start_date"]
 
@@ -416,6 +422,14 @@ class EqubGroup(TimeStampedModel):
     @property
     def is_running(self) -> bool:
         return self.status == self.Status.ACTIVE
+
+    @property
+    def is_product_equb(self) -> bool:
+        return bool(self.listing_id)
+
+    @property
+    def spots_left(self) -> int:
+        return max(self.max_members - self.members_count, 0)
 
 
 class EqubMembership(TimeStampedModel):

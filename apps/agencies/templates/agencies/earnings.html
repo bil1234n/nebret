@@ -5,7 +5,7 @@
   <div class="card kpi dark"><div class="label">Total sales</div><div class="value">{{ total.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ total.sales }} sale{{ total.sales|pluralize }}</div></div>
   <div class="card kpi"><div class="label">Platform fee</div><div class="value">{{ total.commission|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ agency.commission_percent|floatformat:"-2" }}% to Nebret</div></div>
   <div class="card kpi"><div class="label">Your share</div><div class="value">{{ total.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">&nbsp;</div></div>
-  <div class="card kpi gold"><div class="label">Still owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">Nebret pays this out</div></div>
+  <div class="card kpi gold"><div class="label">Still owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">Nebret pays this out{% if total.receivable %} · you owe Nebret {{ total.receivable|compact }} ETB commission on payments you received directly{% endif %}</div></div>
 </div>
 <div class="note-box mt">{% if agency.chapa_subaccount_id %}Sales paid online are split by Chapa: your share goes straight to {{ agency.bank_name|default:"your bank" }} ({{ agency.account_number }}). {% endif %}Sales paid with an Equb payout or a prize are paid to you by Nebret.</div>
 <form class="toolbar mt" method="get"><div class="chips">

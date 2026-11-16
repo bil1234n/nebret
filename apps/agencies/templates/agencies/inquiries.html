@@ -8,7 +8,7 @@
 <div class="card mt">
   <div class="card-h"><h2>{{ i.get_kind_display }} · {{ i.listing.title }}</h2>{{ i.status|status_badge:i.get_status_display }}</div>
   <p style="margin-top:0">{{ i.message|linebreaksbr }}</p>
-  <div class="small muted">{{ i.user.full_name }} · <span class="mono">{{ i.phone|default:i.user.phone }}</span> · {{ i.created_at|date:"d M Y, H:i" }}{% if i.preferred_date %} · prefers {{ i.preferred_date|date:"D d M" }}{% endif %}</div>
+  <div class="small muted">{{ i.user.full_name }} · <span class="mono">{{ i.user.phone|mask_phone }}</span> · {{ i.created_at|date:"d M Y, H:i" }}{% if i.preferred_date %} · prefers {{ i.preferred_date|date:"D d M" }}{% endif %}</div>
   {% if i.reply %}<div class="note-box mt"><b>Your reply:</b> {{ i.reply|linebreaksbr }}</div>{% endif %}
   {% if i.status != 'CLOSED' %}
   <form method="post" class="toolbar mt" style="margin-bottom:0">{% csrf_token %}<input type="hidden" name="inquiry" value="{{ i.pk }}">

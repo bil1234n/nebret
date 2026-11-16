@@ -1,0 +1,14 @@
+{% extends "accounts/_page.html" %}
+{% block title %}Agreement check{% endblock %}
+{% block heading %}{% if valid %}Genuine agreement ✓{% else %}Not a valid agreement{% endif %}{% endblock %}
+{% block content %}
+<div class="card">
+  {% if valid %}
+    <p><b>Order</b> {{ reference }}<br><b>Seller</b> {{ company }}<br><b>Issued</b> {{ issued|date:"d F Y" }} (version {{ version }})</p>
+    {% if superseded %}<p class="muted">A newer version of this agreement has been issued since. Ask the buyer for the latest one.</p>{% endif %}
+  {% else %}
+    <p class="errors">This code does not match any agreement issued by Nebret Equb. The document may have been changed.</p>
+  {% endif %}
+  <p class="muted">Only these details are shown here. The parties can see the full agreement in the Nebret app.</p>
+</div>
+{% endblock %}

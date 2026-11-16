@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from decimal import Decimal
 
+from django.conf import settings
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -22,7 +23,7 @@ from apps.core.exceptions import BusinessRuleError
 from apps.equb import services as equb_svc
 from apps.equb import standing as standing_mod
 from apps.equb.models import EqubGroup, EqubMembership, EqubPayment
-from apps.market.models import Category, Inquiry, Listing, ListingUnit, Order
+from apps.market.models import BankTransferProof, Category, Inquiry, Listing, ListingUnit, Order
 from apps.market.serializers import (InquirySerializer, ListingDetailSerializer, ListingListSerializer,
                                      OrderDetailSerializer, OrderListSerializer)
 from apps.market.services import handover as handover_svc
@@ -30,6 +31,7 @@ from apps.market.services import operations as ops
 from apps.market.services import orders as order_svc
 
 from . import services
+from .bank_accounts import has_usable_account
 from .models import AgencyCustomer, AgencyLedgerEntry, FamilyMember
 
 ZERO = Decimal("0")
@@ -79,10 +81,18 @@ def _orders(request):
             .select_related("user", "listing__category", "unit", "company").prefetch_related("installments"))
 
 
+def mask_phone(phone: str) -> str:
+    """Company staff never see a buyer's phone number – they talk in the in-app chat."""
+    digits = "".join(c for c in (phone or "") if c.isdigit())
+    return ("•" * max(len(digits) - 2, 0) + digits[-2:]) if digits else ""
+
+
 def _order_row(request, o: Order, detail: bool = False) -> dict:
     data = (OrderDetailSerializer if detail else OrderListSerializer)(o, context=_ctx(request)).data
-    data["customer"] = {"name": o.user.full_name, "phone": o.user.phone}
+    data["customer"] = {"name": o.user.full_name, "phone": mask_phone(o.user.phone)}
     if detail:
+        data["contact_phone"] = mask_phone(data.get("contact_phone", ""))
+        data["contact_email"] = ""
         data["events"] = [{"kind": e.kind, "kind_label": e.get_kind_display(), "message": e.message,
                            "created_at": e.created_at, "by": e.by.full_name if e.by_id else ""}
                           for e in o.events.select_related("by")[:40]]
@@ -94,7 +104,8 @@ def _ledger_row(e: AgencyLedgerEntry) -> dict:
     return {"id": e.id, "created_at": e.created_at, "kind": e.kind, "description": e.description,
             "customer": e.customer.full_name if e.customer_id else "", "order": e.order.reference if e.order_id else None,
             "gross_amount": str(e.gross_amount), "commission": str(e.commission), "agency_amount": str(e.agency_amount),
-            "payout_status": e.payout_status, "payout_label": e.get_payout_status_display()}
+            "payout_status": e.payout_status, "payout_label": e.get_payout_status_display(),
+            "direction": e.direction, "direction_label": e.get_direction_display()}
 
 
 def _summary(d: dict) -> dict:
@@ -149,7 +160,10 @@ def dashboard(request):
             "installments": orders.filter(status=Order.Status.INSTALLMENTS).count(),
             "handovers": orders.filter(status=Order.Status.PAID).count(),
             "inquiries": Inquiry.objects.filter(listing__company=a, status=Inquiry.Status.OPEN).count(),
-            "customers": a.customers.count(), "equb_places": places.count()},
+            "customers": a.customers.count(), "equb_places": places.count(),
+            "payments_to_confirm": BankTransferProof.objects.filter(
+                order__company=a, status=BankTransferProof.Status.VERIFIED_AWAITING_PARTNER).count()},
+        "bank_account_ready": has_usable_account(a),
         "pending": [_order_row(request, o) for o in orders.filter(status=Order.Status.PENDING_PAYMENT)
                     .order_by("expires_at")[:5]],
         "handovers": [_order_row(request, o) for o in orders.filter(status=Order.Status.PAID).order_by("handover_due")[:5]],
@@ -167,7 +181,7 @@ class CompanyListingSerializer(serializers.ModelSerializer):
         fields = ["category", "title", "summary", "description", "brand", "model_name", "year", "condition", "city",
                   "area", "address", "price", "compare_at_price", "image_url", "specs", "features",
                   "allow_full_payment", "allow_reservation", "reservation_fee", "reservation_days", "allow_installments",
-                  "min_down_payment_percent", "max_installment_months", "allow_equb_payout", "delivery_available",
+                  "min_down_payment_percent", "max_installment_months", "delivery_available",
                   "delivery_fee", "handover_days", "warranty_months", "units"]
 
     def validate(self, attrs):
@@ -202,7 +216,9 @@ def listings(request):
         s.is_valid(raise_exception=True)
         units = s.validated_data.pop("units", 1)
         listing = Listing(**s.validated_data, company=request.agency, created_by=request.user)
-        if request.agency.status != "ACTIVE":
+        from .bank_accounts import has_usable_account
+
+        if request.agency.status != "ACTIVE" or not has_usable_account(request.agency):
             listing.status = Listing.Status.DRAFT
         listing.save()
         if units:
@@ -236,6 +252,12 @@ def listing(request, pk: int):
         if action in ("publish", "unpublish"):
             if action == "publish" and request.agency.status != "ACTIVE":
                 raise BusinessRuleError("Your company must be approved before listings go live.")
+            if action == "publish":
+                from .bank_accounts import has_usable_account
+
+                if not has_usable_account(request.agency):
+                    raise BusinessRuleError("Add a bank account and wait for Nebret's approval before publishing – "
+                                            "buyers pay straight into it.")
             obj.status = Listing.Status.ACTIVE if action == "publish" else Listing.Status.DRAFT
             obj.save(update_fields=["status", "updated_at"])
             obj.refresh_stock_status()
@@ -294,7 +316,8 @@ def order(request, reference: str):
         d, action = request.data, request.data.get("action")
         if action == "payment":
             ops.record_office_payment(o, request.user, amount=d.get("amount") or 0, method=d.get("method", ""),
-                                      reference=d.get("reference", ""), note=d.get("note", ""))
+                                      reference=d.get("reference", ""), note=d.get("note", ""),
+                                      bank=d.get("bank", ""))
         elif action == "handover":
             order_svc.complete_handover(o, staff=request.user, note=d.get("note", ""))
         elif action == "cancel":
@@ -305,10 +328,148 @@ def order(request, reference: str):
         elif action == "pay_link":
             txn = services.start_checkout(o, count=int(d.get("count") or 1))
             extra["checkout_url"] = getattr(txn, "checkout_url", "")
+        elif action == "proof":  # a receipt the buyer brought in, uploaded for them
+            from apps.market.services import bank_transfer
+
+            bank_transfer.submit_proof(
+                o, request.user, file=request.FILES.get("file"), bank=d.get("bank", ""),
+                reference=d.get("reference", ""), amount=d.get("amount") or 0,
+                transfer_datetime=d.get("transfer_datetime", ""), payer_name=d.get("payer_name", ""),
+                payer_account=d.get("payer_account", ""),
+                declare_co_payer=str(d.get("declare_co_payer", "")).lower() in ("1", "true", "yes"))
+        elif action == "refund":
+            from apps.market.services import bank_transfer
+
+            bank_transfer.record_partner_refund(o, request.user, amount=d.get("amount") or 0,
+                                                reference=d.get("reference", ""), refunded_on=d.get("refunded_on"),
+                                                evidence=request.FILES.get("evidence"), note=d.get("note", ""))
         else:
             raise BusinessRuleError("Unknown action.")
         o = _orders(request).get(pk=o.pk)
-    return Response({**_order_row(request, o, detail=True), "office_methods": ops.OFFICE_METHODS, **extra})
+    from apps.market.services import bank_transfer
+
+    extra["proofs"] = [bank_transfer.proof_row(p, request, for_staff=True) for p in o.proofs.select_related("order")]
+    if o.status in (Order.Status.PENDING_PAYMENT, Order.Status.RESERVED, Order.Status.INSTALLMENTS) \
+            and o.is_bank_transfer:
+        extra["bank_instructions"] = bank_transfer.bank_instructions(o)
+    return Response({**_order_row(request, o, detail=True), **extra})
+
+
+# --------------------------------------------------------------------------- payments to confirm
+PROOF_TABS = {"to_confirm": ["VERIFIED_AWAITING_PARTNER"], "checking": ["SUBMITTED", "VERIFYING"],
+              "disputed": ["DISPUTED"], "done": ["CONFIRMED", "REJECTED", "EXPIRED"]}
+
+
+@company_api()
+def payments(request):
+    """Receipts on the company's orders. ``?tab=to_confirm|checking|disputed|done``."""
+    from apps.market.models import BankTransferProof
+    from apps.market.services import bank_transfer
+
+    qs = BankTransferProof.objects.filter(order__company=request.agency).select_related("order__user",
+                                                                                         "partner_confirmed_by")
+    tab = request.query_params.get("tab") or "to_confirm"
+    if tab in PROOF_TABS:
+        qs = qs.filter(status__in=PROOF_TABS[tab])
+    return _paged(request, qs.order_by("created_at" if tab == "to_confirm" else "-created_at"),
+                  lambda p: bank_transfer.proof_row(p, request, for_staff=True))
+
+
+@company_api(["GET", "POST"])
+def payment(request, pk: int):
+    """POST ``{action: confirm, amount, payer_name, credited_at, statement_ref}`` · ``{action: reject, reason}`` ·
+    ``{action: dispute, reason}``. Only owners and managers; above the threshold two different people confirm."""
+    from apps.market.models import BankTransferProof
+    from apps.market.services import bank_transfer
+
+    proof = get_object_or_404(BankTransferProof.objects.select_related("order__user"), pk=pk,
+                              order__company=request.agency)
+    if request.method == "POST":
+        d, action = request.data, request.data.get("action")
+        if action == "confirm":
+            proof = bank_transfer.confirm_proof(proof, request.user, amount=d.get("amount") or 0,
+                                                payer_name=d.get("payer_name", ""), credited_at=d.get("credited_at"),
+                                                statement_ref=d.get("statement_ref", ""))
+        elif action == "reject":
+            proof = bank_transfer.reject_proof(proof, request.user, d.get("reason", ""))
+        elif action == "dispute":
+            proof = bank_transfer.dispute_proof(proof, request.user, d.get("reason", ""))
+        else:
+            raise BusinessRuleError("Unknown action.")
+        proof.refresh_from_db()
+    return Response(bank_transfer.proof_row(proof, request, for_staff=True))
+
+
+# --------------------------------------------------------------------------- bank accounts
+@company_api(["GET", "POST"])
+def bank_accounts(request):
+    """GET – the company's accounts and their history. POST (owner) – submit a new or changed account:
+    ``{bank, account_name, account_number, currency, swift_code, branch, replaces}``."""
+    from . import bank_accounts as ba
+    from .models import PartnerBankAccount
+
+    if request.method == "POST":
+        d = request.data
+        replaces = None
+        if d.get("replaces"):
+            replaces = get_object_or_404(PartnerBankAccount, pk=d["replaces"], agency=request.agency)
+        acc = ba.submit_account(request.agency, request.user, bank=d.get("bank", ""),
+                                account_name=d.get("account_name", ""), account_number=d.get("account_number", ""),
+                                currency=d.get("currency", "ETB"), swift_code=d.get("swift_code", ""),
+                                branch=d.get("branch", ""), replaces=replaces)
+        return Response(ba.account_row(acc), status=201)
+    from apps.payments.banks import Bank, Currency
+
+    return Response({"accounts": [ba.account_row(a) for a in request.agency.bank_accounts.all()],
+                     "has_usable_account": ba.has_usable_account(request.agency),
+                     "banks": [{"code": c, "name": n} for c, n in Bank.choices],
+                     "currencies": list(Currency.values), "can_edit": request.agency_staff.role == "OWNER",
+                     "cooling_off_hours": settings.NEBRET["BANK_ACCOUNT_COOLING_OFF_HOURS"]})
+
+
+@company_api(["POST"])
+def bank_account(request, pk: int):
+    """``{action: retire, note}`` (owner)."""
+    from . import bank_accounts as ba
+    from .models import PartnerBankAccount
+
+    acc = get_object_or_404(PartnerBankAccount, pk=pk, agency=request.agency)
+    if request.data.get("action") != "retire":
+        raise BusinessRuleError("Unknown action.")
+    return Response(ba.account_row(ba.retire_account(acc, request.user, request.data.get("note", ""))))
+
+
+# --------------------------------------------------------------------------- product Equbs
+@company_api(["GET", "POST"])
+def listing_equbs(request, pk: int):
+    """GET – product Equbs for the listing. POST (owner/manager) – create one:
+    ``{contribution_amount, duration_value, duration_unit, members, start_date, rounds_drawn, name, terms}``.
+    ``?preview=1`` returns the maths without creating anything."""
+    from django.utils.dateparse import parse_date
+
+    from apps.equb import product
+    from apps.equb.models import EqubGroup
+
+    obj = get_object_or_404(_listings(request), pk=pk)
+    if request.method == "POST":
+        _need_manager(request)
+        d = request.data
+        if request.query_params.get("preview"):
+            from apps.equb.models import EqubSettings
+
+            fee = EqubSettings.load().service_fee_percent
+            return Response(product.maths(price=obj.price, contribution=d.get("contribution_amount") or 0,
+                                          duration_value=int(d.get("duration_value") or 0), fee_percent=fee))
+        start = parse_date(str(d.get("start_date") or ""))
+        if not start:
+            raise BusinessRuleError("Choose the start date.")
+        group, m = product.create_product_equb(
+            obj, request.user, contribution_amount=d.get("contribution_amount") or 0,
+            duration_value=d.get("duration_value") or 0, duration_unit=d.get("duration_unit") or "DAYS",
+            members=d.get("members") or 0, start_date=start, rounds_drawn=d.get("rounds_drawn") or None,
+            name=d.get("name", ""), terms=d.get("terms", ""))
+        return Response({**product.group_row(group), "maths": m}, status=201)
+    return Response([product.group_row(g) for g in EqubGroup.objects.filter(listing=obj).order_by("-created_at")])
 
 
 @company_api(["POST"])
@@ -337,7 +498,7 @@ def sell(request):
 
 # --------------------------------------------------------------------------- inquiries
 def _inquiry_row(i: Inquiry) -> dict:
-    return {**InquirySerializer(i).data, "customer": {"name": i.user.full_name, "phone": i.phone or i.user.phone},
+    return {**InquirySerializer(i).data, "customer": {"name": i.user.full_name, "phone": mask_phone(i.user.phone)},
             "listing_slug": i.listing.slug}
 
 
@@ -352,11 +513,14 @@ def inquiries(request):
             from apps.notifications.models import Notification
             from apps.notifications.services import notify
 
-            inq.reply, inq.status = reply[:2000], Inquiry.Status.ANSWERED
+            from apps.chat import services as chat
+
+            conv = chat.conversation_from_inquiry(inq) if not chat.Conversation.objects.filter(
+                buyer=inq.user, listing=inq.listing, kind="SELLER").exists() else chat.for_listing(inq.user, inq.listing)
+            msg = chat.post_message(conv, request.user, reply)  # screened like every chat message
+            inq.reply, inq.status = msg.text[:2000], Inquiry.Status.ANSWERED
             inq.replied_by, inq.replied_at = request.user, timezone.now()
             inq.save()
-            notify(inq.user, Notification.Kind.ORDER, f"{request.agency.name} replied",
-                   f"About {inq.listing.title}: {reply[:300]}", {"listing": inq.listing.slug})
         elif request.data.get("action") == "close":
             inq.status = Inquiry.Status.CLOSED
             inq.save(update_fields=["status", "updated_at"])

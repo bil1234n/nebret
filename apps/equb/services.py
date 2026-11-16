@@ -893,6 +893,10 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
 
     rnd.status = EqubRound.Status.DRAWN
     rnd.save(update_fields=["status", "updated_at"])
+    if group.listing_id:  # product Equb: winners receive the product – their order is created and paid now
+        from .product import on_payouts_issued
+
+        on_payouts_issued(payouts)
 
     winner_names = ", ".join(p.membership.display_name.split(" ")[0] for p in payouts)
     for m in _active_members(group).select_related("user"):
@@ -901,7 +905,7 @@ def run_draw(rnd: EqubRound, executed_by=None, *, winner_ids: list[int] | None =
                (f"🎉 {m.dependent_name} won the Equb draw!" if m.is_dependent else "🎉 You won the Equb draw!")
                if is_winner else f"Round {rnd.number} winner: {winner_names}",
                (f"Your {money(payout_amount)} ETB payout from {group.name} is ready. Use it to buy your car, home, "
-                "plot or e-bike in the Nebret marketplace, or ask for it in cash."
+                "plot or e-bike in the Nebret Equb marketplace, or ask for it in cash."
                 if is_winner else (f"{len(pool)} members were in the draw. Verify it in the app – the next contribution is due soon."
                                    if draw.mode in ("RANDOM", "WEIGHTED") else "The next contribution is due soon.")),
                {"equb": group.slug, "round": rnd.number, "membership": m.id})
@@ -1093,6 +1097,9 @@ def redeem_payout(payout: EqubPayout, order) -> EqubPayout:
         raise BusinessRuleError("You can only use a payout on your own order.")
     if order.status not in (Order.Status.PENDING_PAYMENT, Order.Status.RESERVED, Order.Status.INSTALLMENTS):
         raise BusinessRuleError("Payouts can only be used on orders that still have something to pay.")
+    if order.payment_method == Order.PaymentMethod.BANK_TRANSFER:
+        raise BusinessRuleError("New marketplace orders are paid by bank transfer to the seller. Ask Nebret to pay "
+                                "your Equb payout out to you, or win the product in its product Equb.")
     if not order.listing.allow_equb_payout:
         raise BusinessRuleError("The seller does not accept Equb payouts for this item.")
     apply_credit(order, payout.amount, Order.Funding.EQUB_PAYOUT, payout.voucher_code)

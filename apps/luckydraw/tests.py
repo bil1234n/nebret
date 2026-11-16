@@ -96,7 +96,7 @@ class WebDonationTests(TestCase):
         txn = PaymentTransaction.objects.get()
         html = self.client.get(f"/api/payments/return/{txn.reference}/", HTTP_ACCEPT="text/html,application/xhtml+xml")
         self.assertEqual(html.status_code, 200)
-        self.assertContains(html, "Back to the Nebret app")
+        self.assertContains(html, "Back to the Nebret Equb app")
         api = self.client.get(f"/api/payments/return/{txn.reference}/", HTTP_ACCEPT="application/json")
         self.assertEqual(api.json()["reference"], str(txn.reference))
 

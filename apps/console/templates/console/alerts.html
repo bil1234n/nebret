@@ -1,0 +1,17 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Alerts{% endblock %}{% block heading %}Alerts{% endblock %}
+{% block crumbs %}Reused references, repeated rejections, verifier outages, disputes, overdue confirmations and refunds, contact details in chat{% endblock %}
+{% block content %}
+<div class="chips" style="margin-bottom:12px">
+  <a class="chip {% if show == 'open' %}on{% endif %}" href="{% qs show='open' page=None %}">Open</a><a class="chip {% if show == 'all' %}on{% endif %}" href="{% qs show='all' page=None %}">All</a>
+  <a class="chip {% if not kind %}on{% endif %}" href="{% qs kind=None page=None %}">Every kind</a>
+  {% for v, l in kinds %}<a class="chip {% if kind == v %}on{% endif %}" href="{% qs kind=v page=None %}">{{ l }} <b>{{ counts|get_item:v|default:0 }}</b></a>{% endfor %}
+</div>
+<div class="card"><div class="table-wrap"><table class="t"><thead><tr><th>When</th><th>Kind</th><th>Details</th><th>Seller</th><th></th></tr></thead><tbody>
+{% for a in page %}<tr><td class="small">{{ a.created_at|date:"d M H:i" }}</td><td>{{ a.get_kind_display }}</td>
+  <td>{{ a.message }}{% if a.order_reference %} · <a class="mono" href="{% url 'console:order' a.order_reference %}">{{ a.order_reference }}</a>{% endif %}{% if a.proof_id %} · <a href="{% url 'console:proof' a.proof_id %}">receipt</a>{% endif %}{% if a.data.conversation %} · <a href="{% url 'console:conversation' a.data.conversation %}">conversation</a>{% endif %}</td>
+  <td class="small">{{ a.agency.name|default:"—" }}</td>
+  <td>{% if a.resolved_at %}<span class="small muted">Resolved {{ a.resolved_at|date:"d M" }} by {{ a.resolved_by.full_name }}{% if a.resolution_note %} – {{ a.resolution_note }}{% endif %}</span>{% else %}
+    <form method="post" class="toolbar" style="margin:0">{% csrf_token %}<input type="hidden" name="alert" value="{{ a.pk }}"><input type="text" name="note" placeholder="What was done"><button class="btn sm">Resolve</button></form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="5" class="empty">No alerts.</td></tr>{% endfor %}</tbody></table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

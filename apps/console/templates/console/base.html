@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Console{% endblock %} · Nebret</title>
+  <title>{% block title %}Console{% endblock %} · Nebret Equb</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'console/console.css' %}">
@@ -12,7 +12,7 @@
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-mark">NE</div><div><b>Nebret</b><small>Staff console</small></div></div>
+    <div class="brand"><div class="brand-mark">NE</div><div><b>Nebret Equb</b><small>Staff console</small></div></div>
     <nav class="nav">
       <div class="nav-label">Overview</div>
       <a href="{% url 'console:dashboard' %}" class="{% if nav == 'dashboard' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
@@ -21,6 +21,11 @@
       <a href="{% url 'console:installments' %}" class="{% if nav == 'installments' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 14h2M14 14h2M8 17h2"/></svg>Installments</a>
       <a href="{% url 'console:handover' %}" class="{% if nav == 'handover' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L21 2m-3 3l3 3m-6 0l2 2"/></svg>Handover desk</a>
       <a href="{% url 'console:listings' %}" class="{% if nav == 'listings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>Listings &amp; stock</a>
+      <a href="{% url 'console:proofs' %}" class="{% if nav == 'proofs' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2h16v20l-3-2-3 2-3-2-3 2-3-2-1 2z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>Bank receipts</a>
+      <a href="{% url 'console:alerts' %}" class="{% if nav == 'alerts' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></svg>Alerts</a>
+      <a href="{% url 'console:bank_accounts' %}" class="{% if nav == 'bank_accounts' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10h18M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18M12 3l9 5H3z"/></svg>Bank accounts</a>
+      <a href="{% url 'console:commission' %}" class="{% if nav == 'commission' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 1-3 2.3s1.3 2 3 2.2 3 1 3 2.3-1.3 2.2-3 2.2a3 3 0 0 1-3-1.5M12 6v2M12 16v2"/></svg>Commission due</a>
+      <a href="{% url 'console:conversations' %}" class="{% if nav == 'chat' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>Chat</a>
       <a href="{% url 'console:inquiries' %}" class="{% if nav == 'inquiries' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Inquiries</a>
       <a href="{% url 'console:agencies' %}" class="{% if nav == 'agencies' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 10h.01M15 10h.01"/></svg>Partner companies</a>
       <div class="nav-label">Equb</div>{% equb_counts as ec %}
@@ -50,7 +55,7 @@
   <main class="main">
     <div class="topbar">
       <div>
-        <div class="crumbs">{% block crumbs %}Nebret console{% endblock %}</div>
+        <div class="crumbs">{% block crumbs %}Nebret Equb console{% endblock %}</div>
         <h1>{% block heading %}{% endblock %}</h1>
       </div>
       <div style="display:flex;gap:12px;align-items:center">

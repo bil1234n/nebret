@@ -20,15 +20,15 @@
 {% if expired %}
   <div class="card">
     <h2 style="margin-top:0">This link has expired</h2>
-    <p>For your security, donation links work for a short time only. Go back to the Nebret app, open the campaign and tap
+    <p>For your security, donation links work for a short time only. Go back to the Nebret Equb app, open the campaign and tap
       <b>Donate on the website</b> again.</p>
-    <a class="btn" href="{{ deep_link }}">Open the Nebret app</a>
+    <a class="btn" href="{{ deep_link }}">Open the Nebret Equb app</a>
   </div>
 {% elif closed %}
   <div class="card">
     <h2 style="margin-top:0">This campaign is not accepting donations</h2>
     <p>{% if campaign.status == "FUNDED" %}It has reached its goal – thank you to everyone who gave.{% else %}It has closed.{% endif %}</p>
-    <a class="btn" href="{{ deep_link }}">Back to the Nebret app</a>
+    <a class="btn" href="{{ deep_link }}">Back to the Nebret Equb app</a>
   </div>
 {% else %}
   {% if campaign.story %}<p>{{ campaign.story|linebreaksbr }}</p>{% endif %}

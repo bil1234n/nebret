@@ -135,7 +135,7 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **opts):
         from apps.accounts.models import User
-        from apps.agencies.models import Agency, AgencyStaff
+        from apps.agencies.models import Agency, AgencyStaff, PartnerBankAccount
         from apps.agencies.services import add_staff
         from apps.equb.models import EqubGroup, EqubPackage
         from apps.equb.services import join_group
@@ -164,6 +164,12 @@ class Command(BaseCommand):
                                          status=Agency.Status.ACTIVE, created_by=admin))
             if not AgencyStaff.objects.filter(agency=c, role=AgencyStaff.Role.OWNER).exists():
                 add_staff(c, full_name=owner, phone=owner_phone, password="445566", role=AgencyStaff.Role.OWNER)
+            if not c.bank_accounts.filter(status=PartnerBankAccount.Status.APPROVED).exists():
+                # Demo only: an approved account so buyers can pay by bank transfer (real ones need Nebret approval).
+                PartnerBankAccount.objects.create(
+                    agency=c, bank="CBE", account_name=name, account_number=f"1000{sum(map(ord, name)) * 7919 % 10**9:09d}",
+                    currency="ETB", status=PartnerBankAccount.Status.APPROVED, is_active=True, is_verified=True,
+                    verified_by=admin, verified_at=timezone.now(), usable_from=timezone.now(), created_by=admin)
             companies.append(c)
 
         made = 0

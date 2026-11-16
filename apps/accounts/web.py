@@ -17,7 +17,7 @@ from .models import User, normalize_phone
 
 
 def _context(**extra):
-    return {"support_email": settings.NEBRET["SUPPORT_EMAIL"], "company": "Nebret",
+    return {"support_email": settings.NEBRET["SUPPORT_EMAIL"], "company": "Nebret Equb",
             "updated": settings.NEBRET["PRIVACY_UPDATED"], "year": timezone.localdate().year, **extra}
 
 

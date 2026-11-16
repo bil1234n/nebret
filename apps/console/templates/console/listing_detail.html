@@ -2,6 +2,7 @@
 {% block title %}{{ l.title }}{% endblock %}{% block heading %}{{ l.title }}{% endblock %}
 {% block crumbs %}<a href="{% url 'console:listings' %}">Listings</a> / {{ l.category.name }} · {% if l.company %}<a href="{% url 'console:agency' l.company_id %}">{{ l.company.name }}</a>{% else %}Nebret{% endif %}{% endblock %}
 {% block actions %}{{ l.status|status_badge:l.get_status_display }}
+<a class="btn ghost" href="{% url 'console:listing_equb' l.pk %}">Win this with Equb…</a>
 <form method="post" style="display:inline">{% csrf_token %}<input type="hidden" name="action" value="feature"><button class="btn ghost">{% if l.is_featured %}Unfeature{% else %}Feature{% endif %}</button></form>
 <form method="post" style="display:inline">{% csrf_token %}{% if l.status == 'DRAFT' or l.status == 'ARCHIVED' %}<input type="hidden" name="action" value="publish"><button class="btn ghost">Publish</button>{% else %}<input type="hidden" name="action" value="unpublish"><button class="btn ghost">Hide</button>{% endif %}</form>
 <a class="btn ghost" href="{% url 'console:listing_edit' l.pk %}">Edit</a><a class="btn" href="{% url 'console:sell' %}?listing={{ l.pk }}">New order</a>{% endblock %}
@@ -28,7 +29,7 @@
       <dt>Full payment</dt><dd>{% if l.allow_full_payment %}Yes{% else %}No{% endif %}</dd>
       <dt>Reservation</dt><dd>{% if l.allow_reservation and l.reservation_fee %}{{ l.reservation_fee|money }}, balance within {{ l.reservation_days }} days{% else %}No{% endif %}</dd>
       <dt>Installments</dt><dd>{% if l.allow_installments %}{{ l.min_down_payment_percent|floatformat:"-2" }}% down ({{ l.min_down_payment|money }}), up to {{ l.max_installment_months }} months{% if l.finance_rate_percent %}, {{ l.finance_rate_percent|floatformat:"-2" }}% a year flat{% else %}, interest-free{% endif %}{% else %}No{% endif %}</dd>
-      <dt>Equb payout</dt><dd>{% if l.allow_equb_payout %}Accepted{% else %}No{% endif %}</dd>
+      <dt>Product Equb</dt><dd>{% if l.product_equb_open %}Open – customers can win it{% else %}None open{% endif %}</dd>
       <dt>Handover</dt><dd>within {{ l.handover_days }} days of full payment{% if l.delivery_available %} · delivery {{ l.delivery_fee|money }}{% endif %}</dd>
       {% if l.warranty_months %}<dt>Warranty</dt><dd>{{ l.warranty_months }} months</dd>{% endif %}
     </dl></div>

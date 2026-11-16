@@ -52,7 +52,7 @@ class ListingViewSet(viewsets.ReadOnlyModelViewSet):
     Browse the marketplace.
 
     Filters: ``category`` (slug), ``group`` (VEHICLES / HOMES / LAND / ELECTRONICS), ``company`` (slug), ``city``,
-    ``min_price``, ``max_price``, ``plan`` (FULL / RESERVATION / INSTALLMENT / EQUB_PAYOUT), ``condition``,
+    ``min_price``, ``max_price``, ``plan`` (FULL / RESERVATION / INSTALLMENT), ``condition``,
     ``featured=1``, ``q`` (search) and ``sort`` (newest · price · -price · popular).
     """
 
@@ -86,7 +86,7 @@ class ListingViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(price__lte=p["max_price"])
         plan = (p.get("plan") or "").upper()
         plan_filter = {"FULL": Q(allow_full_payment=True), "RESERVATION": Q(allow_reservation=True, reservation_fee__gt=0),
-                       "INSTALLMENT": Q(allow_installments=True), "EQUB_PAYOUT": Q(allow_equb_payout=True)}.get(plan)
+                       "INSTALLMENT": Q(allow_installments=True)}.get(plan)
         if plan_filter is not None:
             qs = qs.filter(plan_filter)
         if p.get("featured") in ("1", "true"):
@@ -146,7 +146,10 @@ class ListingViewSet(viewsets.ReadOnlyModelViewSet):
         listing = self.get_object()
         s = InquirySerializer(data=request.data)
         s.is_valid(raise_exception=True)
-        inquiry = s.save(listing=listing, user=request.user, phone=s.validated_data.get("phone") or request.user.phone)
+        inquiry = s.save(listing=listing, user=request.user, phone="")
+        from apps.chat.services import conversation_from_inquiry
+
+        conversation_from_inquiry(inquiry)
         return Response(InquirySerializer(inquiry).data, status=status.HTTP_201_CREATED)
 
 
@@ -222,6 +225,41 @@ class OrderViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
     def cancel(self, request, reference=None):
         order = orders.cancel_order(self.get_object(), request.data.get("reason") or "Cancelled by customer")
         return Response(OrderDetailSerializer(order, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], url_path="bank-instructions")
+    def bank_instructions(self, request, reference=None):
+        """Where to transfer: the seller's frozen account, the exact amount due, the payment code and the deadline."""
+        from .services import bank_transfer
+
+        return Response(bank_transfer.bank_instructions(self.get_object()))
+
+    @action(detail=True, methods=["get", "post"])
+    def proofs(self, request, reference=None):
+        """
+        GET – the order's receipts with their status. POST (multipart) – upload a receipt: ``file`` (JPG/PNG/PDF),
+        ``bank``, ``reference``, ``amount``, ``transfer_datetime`` (ISO), ``payer_name``, optional ``payer_account``,
+        ``installment`` and ``declare_co_payer``.
+        """
+        from .services import bank_transfer
+
+        order = self.get_object()
+        if request.method == "POST":
+            d = request.data
+            proof = bank_transfer.submit_proof(
+                order, request.user, file=request.FILES.get("file"), bank=d.get("bank", ""),
+                reference=d.get("reference", ""), amount=d.get("amount") or 0,
+                transfer_datetime=d.get("transfer_datetime", ""), payer_name=d.get("payer_name", ""),
+                payer_account=d.get("payer_account", ""), installment_id=d.get("installment") or None,
+                declare_co_payer=str(d.get("declare_co_payer", "")).lower() in ("1", "true", "yes"))
+            return Response(bank_transfer.proof_row(proof, request), status=status.HTTP_201_CREATED)
+        return Response([bank_transfer.proof_row(p, request) for p in order.proofs.select_related("order")])
+
+    @action(detail=True, methods=["get"])
+    def agreement(self, request, reference=None):
+        """Every version of the agreement, newest first, with short-lived download links."""
+        from .services.agreement import agreement_rows
+
+        return Response(agreement_rows(self.get_object(), request))
 
     @action(detail=True, methods=["post"], url_path="use-payout")
     def use_payout(self, request, reference=None):

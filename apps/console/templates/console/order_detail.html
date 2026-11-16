@@ -10,13 +10,26 @@
   <div class="card kpi"><div class="label">Due now</div><div class="value">{{ o.amount_due_now|compact }}</div><div class="sub">{% if o.status == 'PENDING_PAYMENT' and o.expires_at %}unit held until {{ o.expires_at|date:"d M H:i" }}{% elif o.status == 'PAID' %}hand over by {{ o.handover_due|date:"d M Y" }}{% else %}&nbsp;{% endif %}</div></div>
 </div>
 
-{% if o.status == 'PENDING_PAYMENT' or o.status == 'RESERVED' or o.status == 'INSTALLMENTS' %}
+{% if o.payment_method == 'BANK_TRANSFER' %}
+<div class="card mt"><div class="card-h"><h2>Bank-transfer receipts</h2><span>Pays into {{ o.pay_to_account.bank_name }} <span class="mono">{{ o.pay_to_account.account_number }}</span> ({{ o.pay_to_account.account_name }}) · code <b class="mono">{{ o.payment_code }}</b></span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Uploaded</th><th>Bank / reference</th><th>Payer</th><th class="r">Amount</th><th>Status</th></tr></thead><tbody>
+  {% for p in proofs %}<tr><td class="small"><a href="{% url 'console:proof' p.pk %}">{{ p.created_at|date:"d M H:i" }}</a></td><td class="mono small">{{ p.bank }} {{ p.normalised_reference }}</td><td>{{ p.payer_name }}</td><td class="r num">{{ p.amount_claimed|money }}</td><td><a href="{% url 'console:proof' p.pk %}">{{ p.status|status_badge:p.get_status_display }}</a></td></tr>
+  {% empty %}<tr><td colspan="5" class="empty">No receipts yet.</td></tr>{% endfor %}</tbody></table></div>
+  {% if agreements %}<div class="small mt">Agreement: {% for a in agreements %}<a href="{{ a.download_url }}" target="_blank">v{{ a.version }}</a>{% if a.superseded %} (superseded){% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>{% endif %}
+  {% if o.refund_due_by %}<div class="small mt">Seller refund due by {{ o.refund_due_by|date:"d M Y" }} · refunded {{ o.refunded_amount|money }} of {{ o.amount_paid|money }}</div>{% endif %}
+</div>
+{% endif %}
+{% if o.status == 'PENDING_PAYMENT' and not o.payment_method or o.status == 'RESERVED' and not o.payment_method or o.status == 'INSTALLMENTS' and not o.payment_method or office_on and o.status in 'PENDING_PAYMENT RESERVED INSTALLMENTS' %}
 <form method="post" class="card mt" style="border:2px solid var(--gold)">{% csrf_token %}<input type="hidden" name="action" value="office_payment">
   <div class="card-h"><h2>Record a payment at the office</h2><span>It settles the first payment, the reservation balance or the oldest installments</span></div>
   <div class="form-grid">
     <div class="field"><label>Amount (ETB)</label><input type="number" step="0.01" min="0.01" name="amount" value="{{ o.amount_due_now|stringformat:'s' }}" required></div>
     <div class="field"><label>Method</label><select name="method">{% for k, v in methods.items %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
     <div class="field"><label>Reference</label><input type="text" name="reference" placeholder="Bank / mobile-money reference"></div>
+    <div class="field"><label>Bank</label><input type="text" name="bank" placeholder="e.g. CBE (bank transfers)"></div>
+    {% if o.company_id %}<div class="field"><label>Money received by</label><select name="paid_to">
+      <option value="company">{{ o.company.name }} (its own account / till)</option>
+      <option value="nebret">Nebret</option></select></div>{% endif %}
     <div class="field"><label>Note</label><input type="text" name="note"></div>
   </div>
   <button class="btn">Record payment</button>

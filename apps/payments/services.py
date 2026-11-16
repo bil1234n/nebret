@@ -96,8 +96,13 @@ def apply_status(txn_id: int, new_status: str, *, provider_reference: str = "", 
             return txn  # idempotent: duplicates/late webhooks are ignored
         # A member who cancelled (or let time out) an Equb payment but still finished it on Chapa: the money
         # arrived, so it is credited instead of being lost.
-        if new_status == Status.SUCCESS and amount is not None and Decimal(amount) < txn.amount:
+        # Gateways: paying less than asked fails. Bank receipts: the transaction amount *is* the amount the seller
+        # confirmed, so partial / split transfers are normal and never rejected here.
+        if (new_status == Status.SUCCESS and amount is not None and Decimal(amount) < txn.amount
+                and txn.provider != PaymentTransaction.Provider.BANK):
             new_status, reason = Status.FAILED, f"Amount mismatch: paid {amount}, expected {txn.amount}"
+        if new_status == Status.SUCCESS and amount is not None and txn.provider == PaymentTransaction.Provider.BANK:
+            txn.amount = Decimal(amount).quantize(Decimal("0.01"))
         txn.status = new_status
         if provider_reference:
             txn.provider_reference = provider_reference
@@ -119,7 +124,8 @@ def apply_status(txn_id: int, new_status: str, *, provider_reference: str = "", 
         if new_status == Status.SUCCESS and txn.agency_id:
             from apps.agencies.services import record_commission
 
-            record_commission(txn)
+            # A bank transfer went straight into the company's own account: the company owes Nebret the commission.
+            record_commission(txn, paid_to_company=txn.provider == PaymentTransaction.Provider.BANK)
     return txn
 
 

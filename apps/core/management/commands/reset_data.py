@@ -54,10 +54,18 @@ class Command(BaseCommand):
             if input("Type 'yes' to continue: ").strip().lower() != "yes":
                 raise CommandError("Cancelled — nothing was deleted.")
 
+        from apps.chat.models import Conversation
+        from apps.market.models import BankTransferProof, OrderAgreement, PartnerRefund
+        from apps.payments.models import BankReference, FraudAlert
+
         with transaction.atomic():
             Notification.objects.all().delete()
             WebhookEvent.objects.all().delete()
             AgencyLedgerEntry.objects.all().delete()
+            Conversation.objects.all().delete()
+            FraudAlert.objects.all().delete()
+            for model in (BankTransferProof, OrderAgreement, PartnerRefund, BankReference):
+                model.objects.all().delete()
             PaymentTransaction.objects.all().delete()
             # community finance
             GiveawayWinner.objects.all().delete()
@@ -75,7 +83,8 @@ class Command(BaseCommand):
             FamilyMember.objects.all().delete()
             AgencyCustomer.objects.all().delete()
             if keep:
-                ListingUnit.objects.exclude(status="BLOCKED").update(status="AVAILABLE", held_by=None, held_until=None)
+                ListingUnit.objects.exclude(status="BLOCKED").update(status="AVAILABLE", held_by=None, held_until=None,
+                                                                     equb_group=None)
                 Listing.objects.filter(status="SOLD_OUT").update(status="ACTIVE")
                 Listing.objects.update(views=0)
                 EqubGroup.objects.exclude(status="CANCELLED").update(status="OPEN", current_round=0)
@@ -94,6 +103,9 @@ class Command(BaseCommand):
                 ListingUnit.objects.all().delete()
                 Listing.objects.all().delete()
                 AgencyStaff.objects.all().delete()
+                from apps.agencies.models import PartnerBankAccount
+
+                PartnerBankAccount.objects.all().delete()
                 Agency.objects.all().delete()
             User.objects.filter(is_staff=True).update(referred_by=None)
             customers.delete()

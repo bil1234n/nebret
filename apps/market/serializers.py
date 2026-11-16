@@ -23,6 +23,8 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class CompanyMiniSerializer(serializers.Serializer):
+    """Public company card. No phone, email, website or social links: buyers talk to sellers in the in-app chat."""
+
     id = serializers.IntegerField()
     name = serializers.CharField()
     slug = serializers.CharField()
@@ -30,16 +32,18 @@ class CompanyMiniSerializer(serializers.Serializer):
     kind_label = serializers.CharField(source="get_kind_display")
     logo_url = serializers.CharField()
     city = serializers.CharField()
-    phone = serializers.CharField()
     is_verified = serializers.BooleanField()
 
 
 class CompanySerializer(CompanyMiniSerializer):
     description = serializers.CharField()
-    address = serializers.CharField()
-    website = serializers.CharField()
-    email = serializers.CharField()
     listing_count = serializers.IntegerField(default=0)
+    support_phone = serializers.SerializerMethodField()
+
+    def get_support_phone(self, obj) -> str:
+        from django.conf import settings
+
+        return settings.NEBRET["SUPPORT_PHONE"]
 
 
 def _monthly_from(listing: Listing) -> str | None:
@@ -136,18 +140,47 @@ class ListingListSerializer(serializers.ModelSerializer):
         return _abs(request, (first.image.url if first.image else first.image_url)) if first else ""
 
 
+def equb_group_rows(listing: Listing) -> list[dict]:
+    """Open product Equbs for a listing that still have places ("Win this with Equb")."""
+    from apps.equb.models import EqubGroup
+
+    out = []
+    for g in EqubGroup.objects.filter(listing=listing, status=EqubGroup.Status.OPEN).order_by("start_date"):
+        left = g.spots_left
+        if left <= 0:
+            continue
+        nxt = g.rounds.filter(status__in=["UPCOMING", "COLLECTING"]).order_by("number").first()
+        out.append({"slug": g.slug, "name": g.name, "contribution_amount": str(g.contribution_amount),
+                    "frequency": g.frequency, "frequency_label": g.get_frequency_display(), "every": g.every,
+                    "members": g.max_members, "spots_left": left, "start_date": g.start_date,
+                    "next_draw": nxt.draw_date if nxt else g.start_date, "total_rounds": g.total_rounds,
+                    "product_price": str(g.product_price or listing.price),
+                    "payout_per_winner": str(g.payout_per_winner)})
+    return out
+
+
 class ListingDetailSerializer(ListingListSerializer):
     specs = serializers.SerializerMethodField()
     images = ListingImageSerializer(many=True, read_only=True)
     units = serializers.SerializerMethodField()
     company = serializers.SerializerMethodField()
+    equb_groups = serializers.SerializerMethodField()
+    support_phone = serializers.SerializerMethodField()
 
     class Meta(ListingListSerializer.Meta):
         fields = ListingListSerializer.Meta.fields + [
             "description", "specs", "features", "images", "video_url", "address", "latitude", "longitude",
             "allow_full_payment", "allow_reservation", "reservation_fee", "reservation_days", "allow_installments",
-            "min_down_payment_percent", "finance_rate_percent", "allow_equb_payout", "delivery_available",
-            "delivery_fee", "handover_days", "warranty_months", "units", "views"]
+            "min_down_payment_percent", "finance_rate_percent", "delivery_available",
+            "delivery_fee", "handover_days", "warranty_months", "units", "views", "equb_groups", "support_phone"]
+
+    def get_equb_groups(self, obj) -> list[dict]:
+        return equb_group_rows(obj)
+
+    def get_support_phone(self, obj) -> str:
+        from django.conf import settings
+
+        return settings.NEBRET["SUPPORT_PHONE"]
 
     def get_specs(self, obj) -> list[dict]:
         return _spec_rows(obj)
@@ -241,6 +274,13 @@ class OrderListSerializer(serializers.ModelSerializer):
 
 
 class OrderDetailSerializer(OrderListSerializer):
+    proofs = serializers.SerializerMethodField()
+    agreements = serializers.SerializerMethodField()
+    pay_to_account = serializers.SerializerMethodField()
+    amount_under_review = serializers.SerializerMethodField()
+    support_phone = serializers.SerializerMethodField()
+    conversation = serializers.SerializerMethodField()
+    refund = serializers.SerializerMethodField()
     installments = InstallmentSerializer(many=True, read_only=True)
     events = serializers.SerializerMethodField()
     handover_pass = serializers.SerializerMethodField()
@@ -258,7 +298,46 @@ class OrderDetailSerializer(OrderListSerializer):
             "delivery_method", "delivery_method_label", "delivery_address", "buyer_name", "buyer_id_number",
             "contact_phone", "contact_email", "note", "confirmed_at", "paid_in_full_at", "handed_over_at",
             "cancelled_at", "cancellation_reason", "refunded_amount", "installments", "events", "handover_pass",
-            "cancellation", "installment_options", "company"]
+            "cancellation", "installment_options", "company", "payment_method", "payment_code", "pay_to_account",
+            "proofs", "amount_under_review", "agreements", "support_phone", "conversation", "refund", "co_payers"]
+
+    def get_proofs(self, obj) -> list[dict]:
+        from .services.bank_transfer import proof_row
+
+        return [proof_row(p, self.context.get("request")) for p in obj.proofs.select_related("order")]
+
+    def get_agreements(self, obj) -> list[dict]:
+        from .services.agreement import agreement_rows
+
+        return agreement_rows(obj, self.context.get("request"))
+
+    def get_pay_to_account(self, obj) -> dict | None:
+        a = obj.pay_to_account or {}
+        if not a:
+            return None
+        return {k: a.get(k, "") for k in ("bank", "bank_name", "account_name", "account_number", "currency",
+                                          "swift_code", "branch")}
+
+    def get_amount_under_review(self, obj) -> str:
+        from .services.bank_transfer import amount_under_review
+
+        return str(amount_under_review(obj))
+
+    def get_support_phone(self, obj) -> str:
+        from django.conf import settings
+
+        return settings.NEBRET["SUPPORT_PHONE"]
+
+    def get_conversation(self, obj) -> int | None:
+        c = obj.conversations.order_by("-id").first()
+        return c.pk if c else None
+
+    def get_refund(self, obj) -> dict | None:
+        if not obj.refund_due_by and not obj.refunded_amount:
+            return None
+        return {"due_by": obj.refund_due_by, "refunded": str(obj.refunded_amount),
+                "owed": str(max(obj.amount_paid - obj.refunded_amount, ZERO)),
+                "message": "The seller refunds you directly; Nebret tracks it."}
 
     def get_events(self, obj) -> list[dict]:
         public = [k for k in OrderEvent.Kind.values if k not in (OrderEvent.Kind.NOTE,)]
@@ -285,6 +364,8 @@ class OrderDetailSerializer(OrderListSerializer):
 
 
 class OrderPayRequestSerializer(serializers.Serializer):
+    """Old (gateway) orders only – new orders are paid by bank transfer."""
+
     count = serializers.IntegerField(required=False, min_value=1, default=1, help_text="Installments to pay")
     amount = serializers.DecimalField(max_digits=14, decimal_places=2, required=False, allow_null=True,
                                       help_text="Reservation: pay part of the balance")
@@ -296,11 +377,22 @@ class InquirySerializer(serializers.ModelSerializer):
     listing_title = serializers.CharField(source="listing.title", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
 
+    conversation = serializers.SerializerMethodField()
+
     class Meta:
         model = Inquiry
-        fields = ["id", "listing", "listing_title", "kind", "message", "preferred_date", "phone", "status",
-                  "status_label", "reply", "replied_at", "created_at"]
+        fields = ["id", "listing", "listing_title", "kind", "message", "preferred_date", "status",
+                  "status_label", "reply", "replied_at", "created_at", "conversation"]
         read_only_fields = ["listing", "status", "reply", "replied_at", "created_at"]
+
+    def get_conversation(self, obj) -> int | None:
+        from apps.chat.models import Conversation
+
+        if not obj.pk:
+            return None
+        c = Conversation.objects.filter(buyer_id=obj.user_id, listing_id=obj.listing_id,
+                                        kind=Conversation.Kind.SELLER).first()
+        return c.pk if c else None
 
 
 ZERO = Decimal("0")

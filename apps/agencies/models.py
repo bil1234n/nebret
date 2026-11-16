@@ -188,7 +188,18 @@ class AgencyLedgerEntry(TimeStampedModel):
     * ``GATEWAY`` – paid through a gateway or at the office. With a Chapa subaccount the company's share was settled
       by Chapa; otherwise it is owed and paid out by Nebret.
     * ``CREDIT``  – an order paid with an Equb payout or a prize (money Nebret already holds) – owed.
+
+    ``direction`` says who owes whom:
+
+    * ``TO_COMPANY`` – Nebret holds the money and owes the company ``agency_amount``
+      (OWED → PAID, or SETTLED_BY_CHAPA when Chapa paid it directly).
+    * ``TO_NEBRET``  – the money went straight to the company (into its own bank account or its till), so the company
+      owes Nebret ``commission`` (RECEIVABLE → INVOICED → COLLECTED, or WRITTEN_OFF).
     """
+
+    class Direction(models.TextChoices):
+        TO_COMPANY = "TO_COMPANY", "Nebret owes the company its share"
+        TO_NEBRET = "TO_NEBRET", "Company owes Nebret its commission"
 
     class Kind(models.TextChoices):
         GATEWAY = "GATEWAY", "Paid online / at the office"
@@ -199,9 +210,19 @@ class AgencyLedgerEntry(TimeStampedModel):
         OWED = "OWED", "Owed to company"
         PAID = "PAID", "Paid to company"
         REVERSED = "REVERSED", "Reversed (refund)"
+        # Commission the company owes Nebret (direction TO_NEBRET)
+        RECEIVABLE = "RECEIVABLE", "Commission due from company"
+        INVOICED = "INVOICED", "Commission invoiced"
+        COLLECTED = "COLLECTED", "Commission collected"
+        WRITTEN_OFF = "WRITTEN_OFF", "Commission written off"
+
+    COMPANY_OWED = (Payout.OWED,)
+    NEBRET_RECEIVABLE = (Payout.RECEIVABLE, Payout.INVOICED)
 
     agency = models.ForeignKey(Agency, on_delete=models.PROTECT, related_name="ledger")
     kind = models.CharField(max_length=8, choices=Kind.choices)
+    direction = models.CharField(max_length=10, choices=Direction.choices, default=Direction.TO_COMPANY,
+                                 db_index=True)
     order = models.ForeignKey("market.Order", null=True, blank=True, on_delete=models.PROTECT,
                               related_name="agency_entries")
     payment = models.OneToOneField("payments.PaymentTransaction", null=True, blank=True, on_delete=models.PROTECT,
@@ -225,3 +246,84 @@ class AgencyLedgerEntry(TimeStampedModel):
 
     def __str__(self):
         return f"{self.agency} {self.gross_amount} ({self.get_payout_status_display()})"
+
+
+class PartnerBankAccount(TimeStampedModel):
+    """
+    A bank account the company is paid into. Buyers transfer straight into it – Nebret never holds marketplace money.
+
+    Only the company OWNER can submit a new or changed account; Nebret staff approve it, and it becomes usable after a
+    cooling-off period (``BANK_ACCOUNT_COOLING_OFF_HOURS``) so a hijacked owner login can't redirect payments
+    instantly. Accounts are never edited in place: a change is a new account that replaces the old one when approved.
+    Every step is kept in :class:`BankAccountEvent`.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Waiting for Nebret approval"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        RETIRED = "RETIRED", "Replaced / switched off"
+
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, related_name="bank_accounts")
+    bank = models.CharField(max_length=10)  # apps.payments.banks.Bank
+    account_name = models.CharField(max_length=120)
+    account_number = models.CharField(max_length=40)
+    currency = models.CharField(max_length=3, default="ETB")
+    swift_code = models.CharField(max_length=11, blank=True)
+    branch = models.CharField(max_length=80, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    is_active = models.BooleanField(default=False, help_text="Shown to buyers (after approval and cooling-off)")
+    is_verified = models.BooleanField(default=False, help_text="Checked and approved by Nebret staff")
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+")
+    verified_at = models.DateTimeField(null=True, blank=True)
+    usable_from = models.DateTimeField(null=True, blank=True, help_text="End of the cooling-off period")
+    replaces = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    rejection_reason = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="+")
+
+    class Meta:
+        ordering = ["agency", "-created_at"]
+        verbose_name = "partner bank account"
+
+    def __str__(self):
+        return f"{self.agency} · {self.bank} {self.masked_number}"
+
+    @property
+    def masked_number(self) -> str:
+        n = self.account_number
+        return ("•" * max(len(n) - 4, 0)) + n[-4:]
+
+    @property
+    def is_usable(self) -> bool:
+        from django.utils import timezone
+
+        return (self.status == self.Status.APPROVED and self.is_active and self.is_verified
+                and self.usable_from is not None and self.usable_from <= timezone.now())
+
+    def snapshot(self) -> dict:
+        """What the buyer is told to pay into – frozen on the order."""
+        from apps.payments.banks import Bank
+
+        return {"account_id": self.pk, "bank": self.bank, "bank_name": dict(Bank.choices).get(self.bank, self.bank),
+                "account_name": self.account_name, "account_number": self.account_number, "currency": self.currency,
+                "swift_code": self.swift_code, "branch": self.branch, "agency_id": self.agency_id,
+                "agency_name": self.agency.name}
+
+
+class BankAccountEvent(models.Model):
+    """Full change history of a company's bank accounts."""
+
+    account = models.ForeignKey(PartnerBankAccount, on_delete=models.CASCADE, related_name="events")
+    action = models.CharField(max_length=20)  # SUBMITTED · APPROVED · REJECTED · ACTIVATED · RETIRED
+    by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    note = models.CharField(max_length=255, blank=True)
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.account} {self.action}"

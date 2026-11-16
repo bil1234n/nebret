@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django import forms as dj_forms
+from django.conf import settings
 from django.contrib import messages
 from django.db.models import Count, F, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
@@ -19,6 +20,7 @@ from apps.agencies.forms import ListingForm, SaleForm, UnitsForm
 from apps.agencies.models import Agency
 from apps.market.models import Category, Inquiry, Installment, Listing, ListingUnit, Order
 from apps.market.services import handover as handover_svc
+from apps.market.services.agreement import agreement_rows
 from apps.market.services import operations as ops
 from apps.market.services import orders as order_svc
 from apps.payments.models import PaymentTransaction
@@ -112,7 +114,8 @@ def order_detail(request, reference):
         if a == "office_payment":
             _do(request, lambda: ops.record_office_payment(o, request.user, amount=p.get("amount") or 0,
                                                            method=p.get("method", ""), reference=p.get("reference", ""),
-                                                           note=p.get("note", "")), "Payment recorded.")
+                                                           note=p.get("note", ""), bank=p.get("bank", ""),
+                                                           paid_to=p.get("paid_to") or None), "Payment recorded.")
         elif a == "handover":
             _do(request, lambda: order_svc.complete_handover(o, staff=request.user, note=p.get("note", "")),
                 "Handover recorded – the customer has been notified.")
@@ -144,6 +147,8 @@ def order_detail(request, reference):
         "pass": handover_svc.pass_payload(o) if o.status in (Order.Status.PAID, Order.Status.COMPLETED) else "",
         "refund_left": o.amount_paid - o.refunded_amount,
         "refund_methods": ["Bank transfer", "Cash", "telebirr", "Chapa", "Equb credit"],
+        "proofs": o.proofs.all(), "agreements": agreement_rows(o, request),
+        "office_on": settings.NEBRET.get("MARKET_OFFICE_PAYMENTS"),
     })
 
 

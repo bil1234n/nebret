@@ -1,7 +1,7 @@
 """
-Nebret — Django settings.
+Nebret Equb — Django settings.
 
-Nebret is a property Equb and marketplace: members save together in Equb circles and buy cars, houses,
+Nebret Equb is a property Equb and marketplace: members save together in Equb circles and buy cars, houses,
 apartments, land, e-bikes and electronics from verified partner companies.
 
 All secrets and environment-specific values are read from environment variables
@@ -11,6 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 import os
 import re
+import sys
 
 import dj_database_url
 
@@ -74,7 +75,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     "drf_spectacular",
-    # Nebret apps
+    # Nebret Equb apps
     "apps.core",
     "apps.accounts",
     "apps.payments",
@@ -83,6 +84,7 @@ INSTALLED_APPS = [
     "apps.equb",
     "apps.luckydraw",
     "apps.agencies",
+    "apps.chat",
     "apps.console",
 ]
 
@@ -159,6 +161,8 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 WHITENOISE_USE_FINDERS = True
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# Receipts, agreements and chat attachments when Cloudinary isn't configured – never served directly.
+PRIVATE_MEDIA_ROOT = Path(env("PRIVATE_MEDIA_ROOT", str(BASE_DIR / "private_media")))
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STORAGES = {
@@ -212,7 +216,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Nebret API",
+    "TITLE": "Nebret Equb API",
     "DESCRIPTION": "Property marketplace (cars, houses, apartments, land, e-bikes & electronics), property Equb "
                    "circles, installment plans, Sadaqah crowdfunding and free referral giveaways.",
     "VERSION": "1.0.0",
@@ -237,7 +241,7 @@ NEBRET = {
     "MAX_INSTALLMENT_MONTHS": int(env("MAX_INSTALLMENT_MONTHS", 60)),
     "CROWDFUND_FEE_PERCENT": float(env("CROWDFUND_FEE_PERCENT", 5)),
     "COMPANY_PROFIT_PERCENT": float(env("COMPANY_PROFIT_PERCENT", 5)),
-    # Nebret's commission on every partner-company sale (taken from the company's share).
+    # Nebret Equb's commission on every partner-company sale (taken from the company's share).
     "AGENCY_COMMISSION_PERCENT": float(env("AGENCY_COMMISSION_PERCENT", 5)),
     "REFERRALS_PER_GIVEAWAY_ENTRY": int(env("REFERRALS_PER_GIVEAWAY_ENTRY", 10)),
     "TICKET_SIGNING_KEY": env("TICKET_SIGNING_KEY", SECRET_KEY),
@@ -248,12 +252,69 @@ NEBRET = {
     # Shown on /privacy/ and /account/delete/ – set SUPPORT_EMAIL to the inbox you really read.
     "SUPPORT_EMAIL": env("SUPPORT_EMAIL", "support@nebret.et"),
     "PRIVACY_UPDATED": env("PRIVACY_UPDATED", "6 November 2026"),
-    # The legal entity that runs Nebret – the sponsor of every giveaway (App Store guideline 5.3.1).
+    # The legal entity that runs Nebret Equb – the sponsor of every giveaway (App Store guideline 5.3.1).
     "COMPANY_LEGAL_NAME": env("COMPANY_LEGAL_NAME", "NIYA FINANCIAL TECHNOLOGIES PLC"),
     # iPhone donations are completed on the website (/give/<slug>/) in Safari, never inside the app
     # (App Store guideline 3.2.2(iv)). The link the app opens is signed and valid for this many minutes.
     "WEB_DONATION_PROVIDER": env("WEB_DONATION_PROVIDER", "mock" if DEBUG else "chapa"),
     "WEB_DONATION_LINK_MINUTES": int(env("WEB_DONATION_LINK_MINUTES", 30)),
+
+    # --- Marketplace bank-transfer payments (see docs/ARCHITECTURE.md) ------------------------------
+    # Every marketplace payment is a bank transfer straight into the seller's own account; Nebret holds none of it.
+    "FIRST_RECEIPT_HOLD_HOURS": int(env("FIRST_RECEIPT_HOLD_HOURS", 24)),       # unit hold until the first receipt
+    "BANK_HOLD_BUSINESS_DAYS": int(env("BANK_HOLD_BUSINESS_DAYS", 3)),          # hold extension per receipt
+    "PARTNER_CONFIRM_SLA_BUSINESS_DAYS": int(env("PARTNER_CONFIRM_SLA_BUSINESS_DAYS", 2)),
+    "DUAL_CONTROL_THRESHOLD": env("DUAL_CONTROL_THRESHOLD", "5000000"),        # ETB; two different confirmers
+    "AMOUNT_TOLERANCE_ETB": "0",                                                # exact amount, always
+    "TRANSFER_TIME_TOLERANCE_MINUTES": int(env("TRANSFER_TIME_TOLERANCE_MINUTES", 30)),
+    "BANK_ACCOUNT_COOLING_OFF_HOURS": int(env("BANK_ACCOUNT_COOLING_OFF_HOURS", 24)),
+    "RECEIPT_MAX_MB": int(env("RECEIPT_MAX_MB", 10)),
+    "VERIFIER_ESCALATE_HOURS": int(env("VERIFIER_ESCALATE_HOURS", 6)),
+    "REFUND_DEADLINE_DAYS": int(env("REFUND_DEADLINE_DAYS", 14)),
+    "REPEATED_REJECTIONS_ALERT": int(env("REPEATED_REJECTIONS_ALERT", 3)),
+    # "fake" (dev/tests, no network) or "shegerpay".
+    "RECEIPT_VERIFIER": env("RECEIPT_VERIFIER", "fake" if DEBUG else "shegerpay"),
+    # ShegerPay's documented response has no receiver account / transfer time. "strict": when it doesn't return the
+    # receiver account, the receipt goes to manual Nebret review. "merchant_name": trust ShegerPay's own check of the
+    # receiver name we send as merchant_name.
+    "SHEGERPAY_RECEIVER_CHECK": env("SHEGERPAY_RECEIVER_CHECK", "strict"),
+    # Office / showroom payments on marketplace orders are off: bank transfers go through receipts. Turn on only to
+    # finish old orders that were being paid at an office.
+    "MARKET_OFFICE_PAYMENTS": env_bool("MARKET_OFFICE_PAYMENTS", False),
+    # Nebret's own listings (no partner company) are paid into this account. Empty = Nebret listings can't be ordered.
+    "HOUSE_BANK_ACCOUNT": ({"bank": env("HOUSE_BANK", "CBE"), "account_name": env("HOUSE_ACCOUNT_NAME", ""),
+                            "account_number": env("HOUSE_ACCOUNT_NUMBER", ""), "currency": "ETB",
+                            "branch": env("HOUSE_BRANCH", ""), "swift_code": env("HOUSE_SWIFT", "")}
+                           if env("HOUSE_ACCOUNT_NUMBER") else {}),
+    # The only phone number customers ever see. Set SUPPORT_PHONE in the server environment.
+    "SUPPORT_PHONE": env("SUPPORT_PHONE", "+251 900 000 000"),
+    # Public holidays skipped by business-day maths (Sat/Sun are always skipped). Movable feasts (Fasika, Eid,
+    # Mawlid) are announced each year – check and extend this list, or set NEBRET_HOLIDAYS=2027-01-07,2027-01-19,…
+    "HOLIDAYS": env_list("NEBRET_HOLIDAYS") or [
+        "2026-01-07", "2026-01-19", "2026-03-02", "2026-03-20", "2026-04-10", "2026-04-12", "2026-05-01",
+        "2026-05-05", "2026-05-27", "2026-05-28", "2026-08-26", "2026-09-11", "2026-09-27",
+        "2027-01-07", "2027-01-19", "2027-03-02", "2027-03-10", "2027-04-30", "2027-05-01", "2027-05-02",
+        "2027-05-05", "2027-05-17", "2027-05-28", "2027-08-15", "2027-09-12", "2027-09-28",
+    ],
+    "AGREEMENT_TITLE": env("AGREEMENT_TITLE", "Sales & Installment Pre-Agreement"),
+    # Chat: violations (contact details shared) before Nebret staff are alerted.
+    "CHAT_VIOLATIONS_ALERT": int(env("CHAT_VIOLATIONS_ALERT", 3)),
+    "CHAT_POLL_SECONDS": int(env("CHAT_POLL_SECONDS", 4)),
+}
+
+# Tests: Nebret's own listings need a sales account, and receipts are checked by the fake verifier.
+TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
+if TESTING:
+    NEBRET["HOUSE_BANK_ACCOUNT"] = {"bank": "CBE", "account_name": "Nebret Equb Sales", "account_number": "1000555000111",
+                                    "currency": "ETB", "branch": "Bole", "swift_code": ""}
+    NEBRET["RECEIPT_VERIFIER"] = "fake"
+    PRIVATE_MEDIA_ROOT = Path("/tmp") / "nebret-test-private"
+
+# --- ShegerPay (receipt verification) --------------------------------------
+SHEGERPAY = {
+    "API_KEY": env("SHEGERPAY_API_KEY", ""),
+    "BASE_URL": env("SHEGERPAY_BASE_URL", "https://api.shegerpay.com"),
+    "TIMEOUT": int(env("SHEGERPAY_TIMEOUT", 20)),
 }
 
 # --- Payment gateways ------------------------------------------------------
@@ -277,7 +338,7 @@ PAYMENT_GATEWAYS = {
         "ENCRYPTION_KEY": env("CHAPA_ENCRYPTION_KEY", ""),
         # The "secret hash" typed in Chapa dashboard → Settings → Webhooks.
         "WEBHOOK_SECRET": env("CHAPA_WEBHOOK_SECRET", ""),
-        "CHECKOUT_TITLE": env("CHAPA_CHECKOUT_TITLE", "Nebret"),
+        "CHECKOUT_TITLE": env("CHAPA_CHECKOUT_TITLE", "Nebret Equb"),
         "TIMEOUT": int(env("CHAPA_TIMEOUT", 20)),
     },
 }

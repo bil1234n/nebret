@@ -5,11 +5,12 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from apps.accounts.web import delete_account, privacy_policy, terms_of_service
-from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView
+from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView, private_file
+from apps.market.web import verify_agreement
 from apps.luckydraw.web import give
 
-admin.site.site_header = "Nebret Administration"
-admin.site.site_title = "Nebret Admin"
+admin.site.site_header = "Nebret Equb Administration"
+admin.site.site_title = "Nebret Equb Admin"
 
 urlpatterns = [
     path("", LandingView.as_view(), name="landing"),
@@ -17,6 +18,8 @@ urlpatterns = [
     path("terms/", terms_of_service, name="terms"),
     path("account/delete/", delete_account, name="delete-account-web"),
     path("give/<slug:slug>/", give, name="give-web"),
+    path("agreements/verify/<str:reference>/<int:version>/<str:signature>/", verify_agreement,
+         name="agreement-verify"),
     path("admin/", admin.site.urls),
     path("console/", include("apps.console.urls")),
     path("company/", include("apps.agencies.urls")),
@@ -31,6 +34,8 @@ urlpatterns = [
     path("api/community/", include("apps.luckydraw.urls")),
     path("api/payments/", include("apps.payments.urls")),
     path("api/notifications/", include("apps.notifications.urls")),
+    path("api/chat/", include("apps.chat.urls")),
+    path("api/files/<str:token>/", private_file, name="private-file"),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]

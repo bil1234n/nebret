@@ -10,7 +10,41 @@
   <div class="card kpi"><div class="label">Due now</div><div class="value">{{ o.amount_due_now|compact }}</div><div class="sub">{% if o.status == 'PENDING_PAYMENT' and o.expires_at %}held until {{ o.expires_at|date:"d M H:i" }}{% elif o.status == 'PAID' %}handover by {{ o.handover_due|date:"d M Y" }}{% else %}&nbsp;{% endif %}</div></div>
 </div>
 
-{% if o.status == 'PENDING_PAYMENT' or o.status == 'RESERVED' or o.status == 'INSTALLMENTS' %}
+{% if o.payment_method %}
+<div class="card mt" style="border:2px solid var(--gold)">
+  <div class="card-h"><h2>Bank-transfer receipts</h2><span>Buyer pays into {{ o.pay_to_account.bank_name }} {{ o.pay_to_account.account_number }} · code <b class="mono">{{ o.payment_code }}</b></span></div>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Uploaded</th><th>Bank / reference</th><th>Payer</th><th>Transfer time</th><th class="r">Amount</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for p in proofs %}<tr><td class="small">{{ p.created_at|date:"d M H:i" }}</td><td class="mono small">{{ p.bank }} {{ p.normalised_reference }}</td><td>{{ p.payer_name }}</td>
+    <td class="small">{{ p.transfer_datetime|date:"d M Y H:i" }}</td><td class="r num">{{ p.amount_claimed|money }}</td><td>{{ p.status|status_badge:p.get_status_display }}{% if p.rejection_reason %}<div class="small muted">{{ p.rejection_reason }}</div>{% endif %}{% if p.partner_confirmed_by and not p.second_confirmer and p.status == 'VERIFIED_AWAITING_PARTNER' %}<div class="small muted">1st confirmation by {{ p.partner_confirmed_by.full_name }} – a second owner/manager must confirm</div>{% endif %}</td>
+    <td>{% if p.status == 'VERIFIED_AWAITING_PARTNER' and can_manage %}
+      <form method="post" class="toolbar" style="margin:0;flex-wrap:wrap">{% csrf_token %}<input type="hidden" name="proof" value="{{ p.pk }}">
+        <input type="number" step="0.01" name="amount" placeholder="Amount on statement" required style="width:140px">
+        <input type="text" name="payer_name" placeholder="Payer on statement" required style="width:150px">
+        <input type="datetime-local" name="credited_at" required>
+        <input type="text" name="statement_ref" placeholder="Statement ref" required style="width:120px">
+        <button class="btn sm" name="action" value="confirm_proof">Confirm</button></form>
+      <form method="post" class="toolbar" style="margin:4px 0 0">{% csrf_token %}<input type="hidden" name="proof" value="{{ p.pk }}"><input type="text" name="reason" placeholder="Reason" required>
+        <button class="btn ghost sm" name="action" value="reject_proof">Reject</button><button class="btn ghost sm" name="action" value="dispute_proof">Dispute</button></form>
+    {% endif %}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No receipts yet. The buyer transfers to your account and uploads the receipt in the app; it is verified with the bank, then you confirm it here or in the app.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% if refund_owed > 0 and can_manage %}
+<form method="post" enctype="multipart/form-data" class="card mt">{% csrf_token %}<input type="hidden" name="action" value="partner_refund">
+  <div class="card-h"><h2>Record your refund to the buyer</h2><span>{{ refund_owed|money }} to refund{% if o.refund_due_by %} by {{ o.refund_due_by|date:"d M Y" }}{% endif %}</span></div>
+  <div class="form-grid"><div class="field"><label>Amount</label><input type="number" step="0.01" name="amount" value="{{ refund_owed|stringformat:'s' }}"></div>
+    <div class="field"><label>Transfer reference</label><input type="text" name="reference" required></div>
+    <div class="field"><label>Date</label><input type="date" name="refunded_on" required></div>
+    <div class="field"><label>Refund receipt</label><input type="file" name="evidence" accept="image/jpeg,image/png,application/pdf" required></div></div>
+  <button class="btn">Record refund</button></form>
+{% endif %}
+{% if o.status == 'PAID' %}
+<form method="post" class="card mt" style="border:2px solid var(--gold)">{% csrf_token %}<input type="hidden" name="action" value="handover">
+  <div class="card-h"><h2>Ready for handover</h2><span>Check the customer's ID and handover pass first</span></div>
+  <div class="field"><label>Handover note</label><input type="text" name="note" placeholder="e.g. keys + title deed handed over, plate AA-3-12345"></div>
+  <button class="btn">Mark as handed over</button>
+</form>
+{% elif o.status == 'COMPLETED' %}<div class="msg success mt">Handed over on {{ o.handed_over_at|date:"d M Y, H:i" }}{% if o.handed_over_by %} by {{ o.handed_over_by.full_name }}{% endif %}.{% if o.handover_note %} {{ o.handover_note }}{% endif %}</div>{% endif %}
+{% elif o.status == 'PENDING_PAYMENT' or o.status == 'RESERVED' or o.status == 'INSTALLMENTS' %}
 <div class="grid g-2 mt">
   <div class="card" style="border:2px solid var(--gold)">
     <div class="card-h"><h2>Online payment link</h2><span>telebirr · CBE Birr · M-Pesa · cards</span></div>
@@ -52,7 +86,7 @@
     {% empty %}<tr><td colspan="6" class="empty">{% if o.plan == 'INSTALLMENT' %}The schedule is created when the down payment is received.{% else %}No installments on this plan.{% endif %}</td></tr>{% endfor %}</tbody></table></div>
   </div>
   <div class="card"><div class="card-h"><h2>Order</h2></div>
-    <dl class="kv"><dt>Customer</dt><dd>{{ o.user.full_name }}<div class="small muted">{{ o.contact_phone }}</div></dd>
+    <dl class="kv"><dt>Customer</dt><dd>{{ o.user.full_name }}<div class="small muted mono">{{ o.contact_phone|mask_phone }} · talk in the in-app chat</div></dd>
       <dt>Item</dt><dd>{{ o.listing.title }}</dd><dt>Unit</dt><dd class="mono">{{ o.unit.code }}{% if o.unit.label %} · {{ o.unit.label }}{% endif %}</dd>
       <dt>Buyer on contract</dt><dd>{{ o.buyer_name|default:"—" }}{% if o.buyer_id_number %}<div class="small muted mono">ID {{ o.buyer_id_number }}</div>{% endif %}</dd>
       <dt>Price</dt><dd>{{ o.unit_price|money }}</dd>

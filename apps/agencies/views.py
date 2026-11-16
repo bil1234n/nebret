@@ -132,6 +132,12 @@ def listing_form(request, pk=None):
             listing.created_by = request.user
             if request.agency.status != "ACTIVE":
                 listing.status = Listing.Status.DRAFT
+        from .bank_accounts import has_usable_account
+
+        if listing.status == Listing.Status.ACTIVE and not has_usable_account(request.agency):
+            listing.status = Listing.Status.DRAFT
+            messages.warning(request, "Saved as a draft: add a bank account in the app and wait for Nebret's approval "
+                                      "before listings go live.")
         listing.save()
         form.save_gallery(listing)
         if not obj and form.cleaned_data.get("initial_units"):
@@ -168,8 +174,13 @@ def listing_detail(request, pk):
             else:
                 messages.error(request, "Units that are held, reserved or sold can't be changed.")
         elif action in ("publish", "unpublish"):
+            from .bank_accounts import has_usable_account
+
             if action == "publish" and request.agency.status != "ACTIVE":
                 messages.error(request, "Your company must be approved before listings go live.")
+            elif action == "publish" and not has_usable_account(request.agency):
+                messages.error(request, "Add a bank account in the app and wait for Nebret's approval before listings "
+                                        "go live – buyers pay straight into it.")
             else:
                 listing.status = Listing.Status.ACTIVE if action == "publish" else Listing.Status.DRAFT
                 listing.save(update_fields=["status", "updated_at"])
@@ -218,7 +229,8 @@ def order_detail(request, reference):
         elif a == "office_payment":
             _do(request, lambda: ops.record_office_payment(o, request.user, amount=p.get("amount") or 0,
                                                            method=p.get("method", ""), reference=p.get("reference", ""),
-                                                           note=p.get("note", "")), "Payment recorded.")
+                                                           note=p.get("note", ""), bank=p.get("bank", "")),
+                "Payment recorded.")
         elif a == "handover":
             _do(request, lambda: order_svc.complete_handover(o, staff=request.user, note=p.get("note", "")),
                 "Handover recorded – the customer has been notified.")
@@ -230,6 +242,33 @@ def order_detail(request, reference):
                                                             staff=request.user), "Order cancelled – the unit is back on sale.")
         elif a == "note":
             _do(request, lambda: ops.add_note(o, request.user, p.get("note", "")), "Note added.")
+        elif a in ("confirm_proof", "reject_proof", "dispute_proof"):
+            from apps.market.models import BankTransferProof
+            from apps.market.services import bank_transfer
+
+            proof = get_object_or_404(BankTransferProof, pk=p.get("proof") or 0, order=o)
+            if a == "confirm_proof":
+                done = _do(request, lambda: bank_transfer.confirm_proof(
+                    proof, request.user, amount=p.get("amount") or 0, payer_name=p.get("payer_name", ""),
+                    credited_at=p.get("credited_at"), statement_ref=p.get("statement_ref", "")))
+                if done:
+                    proof.refresh_from_db()
+                    msg = {"CONFIRMED": "Payment confirmed – the buyer has been notified.",
+                           "DISPUTED": "Your statement doesn't match the receipt – Nebret will check it.",
+                           }.get(proof.status, "First confirmation saved – a second owner or manager must confirm.")
+                    (messages.success if proof.status != "DISPUTED" else messages.warning)(request, msg)
+            elif a == "reject_proof":
+                _do(request, lambda: bank_transfer.reject_proof(proof, request.user, p.get("reason", "")),
+                    "Receipt rejected – the buyer has been told why.")
+            else:
+                _do(request, lambda: bank_transfer.dispute_proof(proof, request.user, p.get("reason", "")),
+                    "Sent to Nebret to check.")
+        elif a == "partner_refund":
+            from apps.market.services import bank_transfer
+
+            _do(request, lambda: bank_transfer.record_partner_refund(
+                o, request.user, amount=p.get("amount") or 0, reference=p.get("reference", ""),
+                refunded_on=p.get("refunded_on"), evidence=request.FILES.get("evidence")), "Refund recorded.")
         return redirect(here)
     payments = PaymentTransaction.objects.filter(purpose__in=["ORDER", "INSTALLMENT"], object_id=o.pk,
                                                  content_type__model="order").order_by("-created_at")
@@ -238,7 +277,10 @@ def order_detail(request, reference):
         request, "orders", o=o, payments=payments, live=live, installments=o.installments.all(),
         options=order_svc.installment_options(o) if o.status == Order.Status.INSTALLMENTS else [],
         events=o.events.select_related("by")[:40], entries=AgencyLedgerEntry.objects.filter(order=o),
-        methods=ops.OFFICE_METHODS))
+        methods=ops.OFFICE_METHODS, proofs=o.proofs.select_related("partner_confirmed_by"),
+        can_manage=request.agency_staff.can_manage,
+        refund_owed=max(o.amount_paid - o.refunded_amount, 0) if o.status in (
+            Order.Status.CANCELLED, Order.Status.DEFAULTED, Order.Status.EXPIRED) else 0))
 
 
 @agency_required()

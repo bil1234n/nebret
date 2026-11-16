@@ -6,3 +6,4 @@ venv/
 staticfiles/
 media/
 *.pem
+private_media/

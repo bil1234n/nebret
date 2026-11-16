@@ -52,8 +52,10 @@ def installment_split(amount: Decimal, months: int) -> tuple[Decimal, Decimal]:
 
 
 def quote(listing: Listing, *, unit: ListingUnit | None = None, plan: str = Order.Plan.FULL, months: int = 0,
-          down_payment=None, delivery: bool = False) -> Quote:
-    if plan not in listing.payment_plans():
+          down_payment=None, delivery: bool = False, any_plan: bool = False) -> Quote:
+    if plan == Order.Plan.EQUB_PAYOUT and not any_plan:
+        raise BusinessRuleError("“Equb payout” is no longer a way to pay. Join this product's Equb instead.")
+    if plan not in listing.payment_plans() and not any_plan:
         raise BusinessRuleError("The seller does not offer this way to pay for this item.")
     price = money(unit.price if unit else listing.price)
     delivery_fee = money(listing.delivery_fee) if delivery and listing.delivery_available else ZERO

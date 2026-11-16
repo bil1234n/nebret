@@ -90,7 +90,7 @@ class DashboardView(APIView):
 
 
 LANDING_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Nebret API</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Nebret Equb API</title>
 <style>
 :root{--g:#0F382B;--g2:#1B4D3E;--soft:#E7F0EC;--line:#E1EAE5;--muted:#5B6F66}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#fff;color:#0D1F18}
@@ -105,7 +105,7 @@ a.card:hover{border-color:var(--g)}a.card.primary{background:#C9A227;border-colo
 code{background:var(--soft);color:var(--g);padding:2px 6px;border-radius:6px;font-size:13px}
 section{padding:0 24px 40px}section h2{font-size:17px}td{padding:6px 12px 6px 0;font-size:14px}
 </style></head><body>
-<header><div class="wrap"><small>ንብረት · Nebret</small><h1>Backend is running</h1>
+<header><div class="wrap"><small>ንብረት · Nebret Equb</small><h1>Backend is running</h1>
 <p>Cars · Houses &amp; apartments · Land · E-bikes · Property Equb · Installments · Crowdfunding</p>
 <div class="status"><span class="dot"></span>Database connected · {listings} live listings · {companies} companies · {equbs} Equbs</div></div></header>
 <div class="wrap"><div class="grid">
@@ -117,7 +117,7 @@ section{padding:0 24px 40px}section h2{font-size:17px}td{padding:6px 12px 6px 0;
 <a class="card" href="/api/equb/groups/"><b>Equb circles →</b><span>Save together for your car or home</span></a>
 <a class="card" href="/api/community/crowdfunding/"><b>Crowdfunding →</b><span>Donation campaigns</span></a>
 <a class="card" href="/privacy/"><b>Privacy policy →</b><span>What we collect and how to delete it</span></a>
-<a class="card" href="/account/delete/"><b>Delete my account →</b><span>Ask us to delete your Nebret account</span></a>
+<a class="card" href="/account/delete/"><b>Delete my account →</b><span>Ask us to delete your Nebret Equb account</span></a>
 </div></div>
 {demo}
 </body></html>"""
@@ -186,3 +186,19 @@ class AppVersionView(APIView):
             bool(rel.min_supported_version) and version_tuple(current) < version_tuple(rel.min_supported_version))
         return Response({"update_available": True, "force": force, "latest_version": rel.version,
                          "title": rel.title, "message": rel.message, "store_url": rel.store_url})
+
+
+def private_file(request, token: str):
+    """Serve a private file behind a short-lived signed token (local storage only – Cloudinary signs its own links)."""
+    from django.http import FileResponse, Http404
+
+    from .private_files import open_local
+
+    found = open_local(token)
+    if not found:
+        raise Http404("This link has expired.")
+    path, content_type = found
+    resp = FileResponse(open(path, "rb"), content_type=content_type)
+    resp["Cache-Control"] = "private, no-store"
+    resp["X-Content-Type-Options"] = "nosniff"
+    return resp

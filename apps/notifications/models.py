@@ -16,6 +16,8 @@ class Notification(TimeStampedModel):
         DONATION = "DONATION", "Crowdfunding donation"
         GROUP_INVITE = "GROUP_INVITE", "Group Equb invitation"
         PROMO = "PROMO", "Promotion"
+        CHAT = "CHAT", "Chat message"
+        PROOF = "PROOF", "Bank transfer receipt"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
     kind = models.CharField(max_length=16, choices=Kind.choices)

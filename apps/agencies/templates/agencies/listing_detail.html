@@ -32,7 +32,7 @@
         <dt>Full payment</dt><dd>{% if l.allow_full_payment %}Yes{% else %}No{% endif %}</dd>
         <dt>Reservation</dt><dd>{% if l.allow_reservation and l.reservation_fee %}{{ l.reservation_fee|money }}, balance within {{ l.reservation_days }} days{% else %}No{% endif %}</dd>
         <dt>Installments</dt><dd>{% if l.allow_installments %}{{ l.min_down_payment_percent|floatformat:"-2" }}% down, up to {{ l.max_installment_months }} months{% if l.finance_rate_percent %}, {{ l.finance_rate_percent|floatformat:"-2" }}% a year flat{% else %}, interest-free{% endif %}{% else %}No{% endif %}</dd>
-        <dt>Equb payout</dt><dd>{% if l.allow_equb_payout %}Accepted{% else %}No{% endif %}</dd>
+        <dt>Product Equb</dt><dd>{% if l.product_equb_open %}Open – customers can win it{% else %}None open{% endif %}</dd>
         <dt>Handover</dt><dd>within {{ l.handover_days }} days of full payment{% if l.delivery_available %} · delivery {{ l.delivery_fee|money }}{% endif %}</dd>
         {% if l.warranty_months %}<dt>Warranty</dt><dd>{{ l.warranty_months }} months</dd>{% endif %}
       </dl></div>

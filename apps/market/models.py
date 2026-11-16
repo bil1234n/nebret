@@ -179,7 +179,7 @@ class Listing(TimeStampedModel):
                                    f"At most {settings.NEBRET['MAX_INSTALLMENT_MONTHS']} months."})
         if self.reservation_fee and self.reservation_fee >= self.price:
             raise ValidationError({"reservation_fee": "The reservation fee must be less than the price."})
-        if not any([self.allow_full_payment, self.allow_reservation, self.allow_installments, self.allow_equb_payout]):
+        if not any([self.allow_full_payment, self.allow_reservation, self.allow_installments]):
             raise ValidationError("Allow at least one way to pay.")
 
     # --- stock -----------------------------------------------------------------------------------
@@ -198,6 +198,10 @@ class Listing(TimeStampedModel):
         return money(self.price * self.min_down_payment_percent / 100)
 
     @property
+    def product_equb_open(self) -> bool:
+        return self.equb_groups.filter(status="OPEN").exists()
+
+    @property
     def seller_name(self) -> str:
         return self.company.name if self.company_id else "Nebret"
 
@@ -209,8 +213,7 @@ class Listing(TimeStampedModel):
             out.append(Order.Plan.RESERVATION)
         if self.allow_installments:
             out.append(Order.Plan.INSTALLMENT)
-        if self.allow_equb_payout:
-            out.append(Order.Plan.EQUB_PAYOUT)
+        # "Equb payout" is no longer a way to pay: products are won through their own product Equb instead.
         return out
 
     def refresh_stock_status(self):
@@ -253,6 +256,7 @@ class ListingUnit(models.Model):
         RESERVED = "RESERVED", "Reserved / being paid"
         SOLD = "SOLD", "Sold"
         BLOCKED = "BLOCKED", "Not for sale"
+        EQUB = "EQUB", "Reserved for a product Equb"
 
     listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="units")
     code = models.CharField(max_length=40, help_text="Stock code, VIN, plot or unit number")
@@ -264,6 +268,8 @@ class ListingUnit(models.Model):
     held_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
                                 related_name="held_units")
     held_until = models.DateTimeField(null=True, blank=True)
+    equb_group = models.ForeignKey("equb.EqubGroup", null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="reserved_units", help_text="Product Equb this unit is reserved for")
 
     class Meta:
         ordering = ["listing", "code"]
@@ -327,6 +333,14 @@ def _order_ref():
     return "NB" + generate_code(6)
 
 
+def new_payment_code() -> str:
+    """Short, readable code the buyer types in the transfer reason, e.g. ``PK7Q9M2``."""
+    code = "P" + generate_code(6)
+    while Order.objects.filter(payment_code=code).exists():
+        code = "P" + generate_code(6)
+    return code
+
+
 class Order(TimeStampedModel):
     class Plan(models.TextChoices):
         FULL = "FULL", "Full payment"
@@ -377,6 +391,20 @@ class Order(TimeStampedModel):
     installment_months = models.PositiveSmallIntegerField(default=0)
     currency = models.CharField(max_length=3, default="ETB")
     price_breakdown = models.JSONField(default=dict, blank=True)
+
+    class PaymentMethod(models.TextChoices):
+        LEGACY = "", "Gateway / office (orders placed before bank transfers)"
+        BANK_TRANSFER = "BANK_TRANSFER", "Bank transfer to the seller"
+        EQUB = "EQUB", "Won in a product Equb"
+
+    payment_method = models.CharField(max_length=14, choices=PaymentMethod.choices, default="", blank=True)
+    payment_code = models.CharField(max_length=10, unique=True, null=True, blank=True,
+                                    help_text="Buyer writes it in the transfer reason")
+    pay_to_account = models.JSONField(default=dict, blank=True,
+                                      help_text="Frozen copy of the account the buyer was told to pay into")
+    co_payers = models.JSONField(default=list, blank=True, help_text="Other people the buyer said may pay for them")
+    refund_due_by = models.DateField(null=True, blank=True, help_text="Seller must refund the buyer by this date")
+    refund_escalated_at = models.DateTimeField(null=True, blank=True)
 
     funding_source = models.CharField(max_length=12, choices=Funding.choices, default=Funding.DIRECT)
     funding_reference = models.CharField(max_length=64, blank=True)
@@ -456,6 +484,10 @@ class Order(TimeStampedModel):
         return f"{self.listing.title}{unit}"
 
     @property
+    def is_bank_transfer(self) -> bool:
+        return self.payment_method == self.PaymentMethod.BANK_TRANSFER
+
+    @property
     def refund_due(self) -> bool:
         return (self.status == self.Status.CANCELLED and self.amount_paid > 0
                 and self.refunded_amount < self.amount_paid)
@@ -512,9 +544,15 @@ class OrderEvent(models.Model):
         REFUNDED = "REFUNDED", "Refunded"
         NOTE = "NOTE", "Note"
         MESSAGE = "MESSAGE", "Message sent"
+        PROOF_SUBMITTED = "PROOF_SUBMITTED", "Receipt submitted"
+        PROOF_VERIFIED = "PROOF_VERIFIED", "Receipt verified with the bank"
+        PROOF_REJECTED = "PROOF_REJECTED", "Receipt rejected"
+        PARTNER_CONFIRMED = "PARTNER_CONFIRMED", "Seller confirmed the money"
+        DISPUTE = "DISPUTE", "Payment disputed"
+        AGREEMENT_ISSUED = "AGREEMENT_ISSUED", "Agreement issued"
 
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="events")
-    kind = models.CharField(max_length=12, choices=Kind.choices)
+    kind = models.CharField(max_length=20, choices=Kind.choices)
     message = models.CharField(max_length=255)
     by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -524,3 +562,118 @@ class OrderEvent(models.Model):
 
     def __str__(self):
         return f"{self.order.reference} {self.kind}: {self.message}"
+
+
+# =========================================================================== bank transfers
+class BankTransferProof(TimeStampedModel):
+    """
+    One receipt a buyer uploaded for a bank transfer into the seller's account (one PaymentTransaction each).
+
+    SUBMITTED → VERIFYING (ShegerPay, in the background) → VERIFIED_AWAITING_PARTNER → CONFIRMED (money applied)
+                                                      ↘ REJECTED         ↘ REJECTED | DISPUTED
+    EXPIRED – the order was cancelled / expired before the receipt was settled.
+    """
+
+    class Status(models.TextChoices):
+        SUBMITTED = "SUBMITTED", "Submitted"
+        VERIFYING = "VERIFYING", "Verifying with the bank"
+        VERIFIED_AWAITING_PARTNER = "VERIFIED_AWAITING_PARTNER", "Waiting for the seller"
+        CONFIRMED = "CONFIRMED", "Confirmed"
+        REJECTED = "REJECTED", "Rejected"
+        DISPUTED = "DISPUTED", "Disputed – Nebret is checking"
+        EXPIRED = "EXPIRED", "Expired"
+
+    OPEN_STATUSES = (Status.SUBMITTED, Status.VERIFYING, Status.VERIFIED_AWAITING_PARTNER, Status.DISPUTED)
+    FINAL_STATUSES = (Status.CONFIRMED, Status.REJECTED, Status.EXPIRED)
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="proofs")
+    installment = models.ForeignKey(Installment, null=True, blank=True, on_delete=models.SET_NULL, related_name="proofs")
+    payment_transaction = models.OneToOneField("payments.PaymentTransaction", on_delete=models.PROTECT,
+                                               related_name="bank_proof")
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    bank = models.CharField(max_length=10, help_text="Sending bank / wallet (apps.payments.banks.Channel)")
+    reference_as_typed = models.CharField(max_length=128)
+    normalised_reference = models.CharField(max_length=64)
+    payer_name = models.CharField(max_length=120)
+    payer_account = models.CharField(max_length=40, blank=True, help_text="Masked")
+    currency = models.CharField(max_length=3, default="ETB")
+    amount_claimed = models.DecimalField(max_digits=14, decimal_places=2)
+    amount_verified = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    transfer_datetime = models.DateTimeField()
+    file = models.JSONField(default=dict, blank=True, help_text="Private storage key – never a public URL")
+    status = models.CharField(max_length=26, choices=Status.choices, default=Status.SUBMITTED, db_index=True)
+    requires_manual_review = models.BooleanField(default=False,
+                                                 help_text="ShegerPay can't check this bank / currency / receipt")
+    shegerpay_request = models.JSONField(default=dict, blank=True)
+    shegerpay_response = models.JSONField(default=dict, blank=True)
+    shegerpay_checked_at = models.DateTimeField(null=True, blank=True)
+    verify_attempts = models.PositiveSmallIntegerField(default=0)
+    next_check_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+", help_text="Nebret staff, for a manual review")
+    partner_confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                             related_name="+")
+    partner_confirmed_at = models.DateTimeField(null=True, blank=True)
+    partner_confirmed_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    partner_confirmed_payer = models.CharField(max_length=120, blank=True)
+    partner_confirmed_datetime = models.DateTimeField(null=True, blank=True)
+    partner_statement_ref = models.CharField(max_length=64, blank=True)
+    second_confirmer = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                         related_name="+")
+    second_confirmed_at = models.DateTimeField(null=True, blank=True)
+    on_behalf_note = models.CharField(max_length=255, blank=True, help_text="Nebret staff confirming for the seller")
+    on_behalf_evidence = models.JSONField(default=dict, blank=True)
+    rejection_reason = models.CharField(max_length=255, blank=True)
+    dispute_reason = models.CharField(max_length=255, blank=True)
+    escalated_at = models.DateTimeField(null=True, blank=True, help_text="Verifier outage escalated to Nebret")
+    sla_escalated_at = models.DateTimeField(null=True, blank=True, help_text="Seller confirmation overdue")
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(
+            fields=["bank", "normalised_reference"], name="uniq_proof_bank_reference",
+            condition=~models.Q(status__in=["REJECTED", "EXPIRED"]))]
+        indexes = [models.Index(fields=["status", "created_at"])]
+
+    def __str__(self):
+        return f"{self.order.reference} {self.bank}:{self.normalised_reference} ({self.status})"
+
+    @property
+    def needs_second_confirmer(self) -> bool:
+        return bool(self.partner_confirmed_by_id) and not self.second_confirmer_id
+
+
+class OrderAgreement(models.Model):
+    """The signed Sales & Installment Pre-Agreement PDF. A new version on every confirmed payment."""
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="agreements")
+    version = models.PositiveSmallIntegerField()
+    file = models.JSONField(default=dict, blank=True)
+    signature = models.CharField(max_length=32)
+    issued_at = models.DateTimeField(auto_now_add=True)
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    payments_snapshot = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["order", "-version"]
+        constraints = [models.UniqueConstraint(fields=["order", "version"], name="uniq_agreement_version")]
+
+    def __str__(self):
+        return f"{self.order.reference} v{self.version}"
+
+
+class PartnerRefund(models.Model):
+    """A refund the seller paid back to the buyer (Nebret only tracks it)."""
+
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="partner_refunds")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    reference = models.CharField(max_length=64)
+    refunded_on = models.DateField()
+    evidence = models.JSONField(default=dict, blank=True)
+    note = models.CharField(max_length=255, blank=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]

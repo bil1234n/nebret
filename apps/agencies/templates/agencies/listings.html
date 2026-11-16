@@ -12,7 +12,7 @@
   <tbody>{% for l in page %}<tr>
     <td><div style="display:flex;gap:10px;align-items:center">{% if l.image_url %}<img src="{{ l.image_url }}" alt="" style="width:48px;height:36px;object-fit:cover;border-radius:6px">{% endif %}<div><a class="strong" href="{% url 'agency:listing' l.pk %}">{{ l.title }}</a><div class="small muted">{{ l.brand }} {{ l.model_name }}{% if l.year %} · {{ l.year }}{% endif %} · {{ l.city }}</div></div></div></td>
     <td>{{ l.category.name }}</td><td class="r num strong">{{ l.price|money }}</td>
-    <td class="small">{% if l.allow_full_payment %}Full {% endif %}{% if l.allow_reservation %}· Reserve {% endif %}{% if l.allow_installments %}· {{ l.max_installment_months }} mo {% endif %}{% if l.allow_equb_payout %}· Equb{% endif %}</td>
+    <td class="small">{% if l.allow_full_payment %}Full {% endif %}{% if l.allow_reservation %}· Reserve {% endif %}{% if l.allow_installments %}· {{ l.max_installment_months }} mo {% endif %}{% if l.product_equb_open %}· Product Equb{% endif %}</td>
     <td class="r num">{{ l.available }}</td><td class="r num">{{ l.sold }}</td><td class="r num">{{ l.n_orders }}</td><td>{{ l.status|status_badge:l.get_status_display }}</td></tr>
   {% empty %}<tr><td colspan="8" class="empty">No listings yet.{% if me.can_manage %} <a href="{% url 'agency:listing_add' %}">Create your first listing →</a>{% endif %}</td></tr>{% endfor %}</tbody>
 </table></div>{% include "console/_pagination.html" %}</div>

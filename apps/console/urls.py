@@ -4,6 +4,7 @@ from . import agency_views as ag
 from . import community_views as cv
 from . import equb_views as e
 from . import manage_views as m
+from . import bank_views as bk
 from . import market_views as mk
 from . import views
 
@@ -64,6 +65,14 @@ urlpatterns = [
     path("lucky-draws/", cv.old_lucky_redirect),
     path("lucky-draws/<slug:slug>/", cv.old_lucky_redirect),
     path("payments/", views.payments, name="payments"),
+    path("market/receipts/", bk.proofs, name="proofs"),
+    path("market/receipts/<int:pk>/", bk.proof, name="proof"),
+    path("market/listings/<int:pk>/equb/", bk.listing_equb, name="listing_equb"),
+    path("alerts/", bk.alerts, name="alerts"),
+    path("bank-accounts/", bk.bank_accounts, name="bank_accounts"),
+    path("commission/", bk.commission, name="commission"),
+    path("chat/", bk.conversations, name="conversations"),
+    path("chat/<int:pk>/", bk.conversation, name="conversation"),
     path("companies/", ag.agencies, name="agencies"),
     path("companies/new/", ag.agency_form, name="agency_add"),
     path("companies/<int:pk>/", ag.agency_detail, name="agency"),

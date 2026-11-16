@@ -1,0 +1,26 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Conversation #{{ c.pk }}{% endblock %}{% block heading %}Conversation #{{ c.pk }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:conversations' %}">Chat</a> / {{ c.buyer.full_name }} ↔ {% if c.kind == 'SUPPORT' %}Nebret support{% else %}{{ c.agency.name|default:"Nebret" }}{% endif %}{% if c.listing %} · {{ c.listing.title }}{% endif %}{% if c.order %} · <a class="mono" href="{% url 'console:order' c.order.reference %}">{{ c.order.reference }}</a>{% endif %}{% endblock %}
+{% block actions %}{{ c.status|status_badge:c.get_status_display }}{% endblock %}
+{% block content %}
+<div class="grid g-21">
+<div class="card"><div class="card-h"><h2>Messages</h2>{% if not c.support_joined and c.agency %}<form method="post">{% csrf_token %}<button class="btn sm" name="action" value="join">Join conversation (both sides see it)</button></form>{% endif %}</div>
+  {% if not readable %}<div class="empty">Join the conversation to read it. It is not reported, flagged or disputed.</div>{% else %}
+  {% for m in msgs %}<div class="note-box" style="margin:6px 0;{% if m.role == 'BUYER' %}background:#fff{% endif %}"><div class="small muted">{{ m.sender }} · {{ m.created_at|date:"d M H:i" }}{% if m.edited %} · edited{% endif %}{% if m.deleted %} · deleted{% endif %}</div>
+    {% if m.card.type %}<div class="small"><b>{{ m.card.type }}</b>{% if m.card.preferred_date %} · {{ m.card.preferred_date }}{% endif %}{% if m.card.order %} · {{ m.card.order }}{% endif %}</div>{% endif %}
+    <div>{{ m.text|linebreaksbr }}</div>{% if m.original_text %}<div class="small" style="color:var(--red)">Original (hidden from them): {{ m.original_text }}</div>{% endif %}
+    {% for a in m.attachments %}<a class="small" href="{{ a.url }}" target="_blank">📎 {{ a.name|default:"attachment" }}</a> {% endfor %}</div>{% endfor %}
+  <form method="post" class="toolbar mt">{% csrf_token %}<input class="grow" type="text" name="text" placeholder="Message as Nebret support"><button class="btn sm" name="action" value="send">Send</button></form>{% endif %}
+  <form method="post" class="toolbar mt">{% csrf_token %}{% if c.status == 'OPEN' %}<button class="btn ghost sm" name="action" value="close">Close</button><button class="btn ghost sm" name="action" value="block">Block</button>{% else %}<button class="btn ghost sm" name="action" value="reopen">Reopen</button>{% endif %}</form>
+</div>
+<div>
+<div class="card"><div class="card-h"><h2>Moderation</h2></div>
+  {% for u in people %}<form method="post" class="toolbar" style="flex-wrap:wrap">{% csrf_token %}<input type="hidden" name="user" value="{{ u.pk }}"><span class="grow">{{ u.full_name }}</span>
+    <input type="number" name="days" placeholder="days" style="width:70px"><input type="text" name="reason" placeholder="reason" style="width:140px">
+    <button class="btn ghost sm" name="action" value="WARNED">Warn</button><button class="btn ghost sm" name="action" value="MUTED">Mute</button><button class="btn ghost sm" name="action" value="SUSPENDED">Suspend</button></form>{% endfor %}
+  {% for r in restrictions %}<form method="post" class="small">{% csrf_token %}<input type="hidden" name="restriction" value="{{ r.pk }}">{{ r.user.full_name }}: {{ r.get_level_display }}{% if r.until %} until {{ r.until|date:"d M" }}{% endif %} <button class="btn ghost sm" name="action" value="lift">Lift</button></form>{% endfor %}
+</div>
+<div class="card mt"><div class="card-h"><h2>Reports</h2></div>{% for r in reports %}<form method="post" class="small">{% csrf_token %}<input type="hidden" name="report" value="{{ r.pk }}">{{ r.created_at|date:"d M" }} · {{ r.reporter.full_name }}: {{ r.reason }} · {{ r.get_status_display }}{% if r.status == 'OPEN' %} <input type="text" name="note" placeholder="resolution"><button class="btn ghost sm" name="action" value="resolve_report">Resolve</button>{% endif %}</form>{% empty %}<p class="muted small">No reports.</p>{% endfor %}</div>
+<div class="card mt"><div class="card-h"><h2>Contact-detail attempts</h2></div>{% for v in violations %}<div class="small">{{ v.created_at|date:"d M H:i" }} · {{ v.user.full_name }} · {{ v.kinds|join:", " }}</div>{% empty %}<p class="muted small">None.</p>{% endfor %}</div>
+</div></div>
+{% endblock %}

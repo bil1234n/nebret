@@ -72,7 +72,7 @@ class GiveawaySerializer(serializers.ModelSerializer):
                   "participants_count", "referrals_count", "seed_commitment", "my_progress", "organizer_name",
                   "prize_provider", "apple_statement", "official_rules"]
 
-    # App Store guideline 5.3: Nebret is the sponsor, the official rules are in the app, Apple is not involved.
+    # App Store guideline 5.3: Nebret Equb is the sponsor, the official rules are in the app, Apple is not involved.
     def get_organizer_name(self, obj) -> str:
         from .rules import organizer_name
 

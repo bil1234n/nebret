@@ -1,0 +1,27 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Bank-transfer receipts{% endblock %}{% block heading %}Bank-transfer receipts{% endblock %}
+{% block crumbs %}Every marketplace payment: verified with the bank (ShegerPay), then confirmed by the seller{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:alerts' %}">Alerts{% if open_alerts %} ({{ open_alerts }}){% endif %}</a>{% endblock %}
+{% block content %}
+<div class="chips" style="margin-bottom:12px">
+  <a class="chip {% if not status %}on{% endif %}" href="{% qs status=None page=None %}">All</a>
+  <a class="chip {% if status == 'manual' %}on{% endif %}" href="{% qs status='manual' page=None %}">Needs manual review <b>{{ counts.manual|default:0 }}</b></a>
+  {% for v, l in statuses %}<a class="chip {% if status == v %}on{% endif %}" href="{% qs status=v page=None %}">{{ l }} <b>{{ counts|get_item:v|default:0 }}</b></a>{% endfor %}
+</div>
+<form class="toolbar" method="get"><input type="hidden" name="status" value="{{ status }}">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Order reference, transfer reference or payer…">
+  <select name="company"><option value="">All sellers</option>{% for c in companies %}<option value="{{ c.pk }}" {% if company == c.pk|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <select name="age"><option value="">Any age</option>{% for d in "1 2 3 5 7"|split %}<option value="{{ d }}" {% if age == d %}selected{% endif %}>Older than {{ d }} day{{ d|pluralize }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Filter</button></form>
+<div class="card"><div class="table-wrap"><table class="t">
+  <thead><tr><th>Uploaded</th><th>Order</th><th>Seller</th><th>Bank / reference</th><th>Payer</th><th class="r">Amount</th><th>Status</th></tr></thead>
+  <tbody>{% for p in page %}<tr>
+    <td class="small"><a href="{% url 'console:proof' p.pk %}">{{ p.created_at|date:"d M H:i" }}</a></td>
+    <td><a class="mono strong" href="{% url 'console:order' p.order.reference %}">{{ p.order.reference }}</a><div class="small muted">{{ p.order.user.full_name }}</div></td>
+    <td class="small">{% if p.order.company %}{{ p.order.company.name }}{% else %}Nebret{% endif %}</td>
+    <td class="mono small">{{ p.bank }} {{ p.normalised_reference }}</td><td>{{ p.payer_name }}</td>
+    <td class="r num">{{ p.amount_claimed|money:p.currency }}</td>
+    <td><a href="{% url 'console:proof' p.pk %}">{{ p.status|status_badge:p.get_status_display }}</a>{% if p.requires_manual_review and p.status == 'VERIFYING' or p.requires_manual_review and p.status == 'SUBMITTED' %}<div class="small muted">manual review</div>{% endif %}{% if p.rejection_reason %}<div class="small muted">{{ p.rejection_reason|truncatechars:60 }}</div>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">No receipts here.</td></tr>{% endfor %}</tbody>
+</table></div>{% include "console/_pagination.html" %}</div>
+{% endblock %}

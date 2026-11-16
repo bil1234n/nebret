@@ -18,7 +18,7 @@
 </div>{% endif %}
 <div class="card mt"><div class="card-h"><h2>Waiting for handover</h2></div>
   <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Item</th><th>Paid on</th><th>Hand over by</th></tr></thead><tbody>
-  {% for o in due %}<tr><td><a class="mono strong" href="{% url 'agency:order' o.reference %}">{{ o.reference }}</a></td><td>{{ o.user.full_name }}<div class="small muted">{{ o.contact_phone }}</div></td>
+  {% for o in due %}<tr><td><a class="mono strong" href="{% url 'agency:order' o.reference %}">{{ o.reference }}</a></td><td>{{ o.user.full_name }}<div class="small muted mono">{{ o.contact_phone|mask_phone }}</div></td>
     <td>{{ o.title }}</td><td class="small">{{ o.paid_in_full_at|date:"d M Y" }}</td><td class="small strong">{{ o.handover_due|date:"d M Y" }}</td></tr>
   {% empty %}<tr><td colspan="5" class="empty">Nothing waiting for handover.</td></tr>{% endfor %}</tbody></table></div>
 </div>

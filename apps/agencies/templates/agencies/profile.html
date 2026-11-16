@@ -9,8 +9,8 @@
   <div class="card"><div class="card-h"><h2>How you get paid</h2></div>
     <dl class="kv"><dt>Platform fee</dt><dd>{{ agency.commission_percent|floatformat:"-2" }}% of every payment on your listings</dd>
       <dt>Payout bank</dt><dd>{% if agency.account_number %}{{ agency.bank_name }} · {{ agency.account_name }} · {{ agency.account_number }}{% else %}Not set{% endif %}</dd>
-      <dt>Chapa split</dt><dd>{% if agency.chapa_subaccount_id %}<span class="badge b-green">On – Chapa pays your share at every payment</span>{% else %}<span class="badge b-grey">Off – Nebret pays you out</span>{% endif %}</dd></dl>
-    <p class="small muted" style="margin-bottom:0">To change your bank details or commission, contact Nebret.</p></div>
+      <dt>Chapa split</dt><dd>{% if agency.chapa_subaccount_id %}<span class="badge b-green">On – Chapa pays your share at every payment</span>{% else %}<span class="badge b-grey">Off – Nebret Equb pays you out</span>{% endif %}</dd></dl>
+    <p class="small muted" style="margin-bottom:0">To change your bank details or commission, contact Nebret Equb.</p></div>
 </div>
 {% if me.can_manage %}
 <form method="post" class="form-page mt" novalidate>{% csrf_token %}

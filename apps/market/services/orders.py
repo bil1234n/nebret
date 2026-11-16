@@ -16,6 +16,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from apps.core.exceptions import BusinessRuleError
@@ -44,12 +45,42 @@ def log_event(order: Order, kind: str, message: str, by=None) -> OrderEvent:
 
 
 # =========================================================================== stock
+def _receipts_in_review():
+    """
+    Order ids with a bank receipt still being checked (one PENDING ``bank`` PaymentTransaction per uploaded receipt).
+    Such an order may already be paid – the money just isn't confirmed yet – so it is never expired automatically.
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    from apps.payments.models import PaymentTransaction
+
+    return PaymentTransaction.objects.filter(
+        content_type=ContentType.objects.get_for_model(Order), provider=PaymentTransaction.Provider.BANK,
+        status__in=[PaymentTransaction.Status.INITIATED, PaymentTransaction.Status.PENDING],
+    ).values("object_id")
+
+
+def protecting_orders(now=None):
+    """
+    Unpaid orders that still have a claim on their unit: the hold hasn't run out, money has been paid, or a receipt
+    is under review. A unit is never put back on sale automatically while one of these exists – only staff (cancel)
+    can release it.
+    """
+    now = now or timezone.now()
+    return Order.objects.filter(status=Order.Status.PENDING_PAYMENT).filter(
+        Q(expires_at__gt=now) | Q(expires_at__isnull=True) | Q(amount_paid__gt=0) | Q(pk__in=_receipts_in_review()))
+
+
+def _unit_is_protected(unit: ListingUnit, now=None) -> bool:
+    return protecting_orders(now).filter(unit=unit).exists()
+
+
 def release_stale_holds() -> int:
-    """Units held by a checkout that was abandoned go back on sale."""
+    """Units held by a checkout that was abandoned (nothing paid, nothing under review) go back on sale."""
     now = timezone.now()
     stale = ListingUnit.objects.filter(status=ListingUnit.Status.HELD, held_until__lt=now)
     listing_ids = set(stale.values_list("listing_id", flat=True))
-    n = stale.exclude(orders__status=Order.Status.PENDING_PAYMENT, orders__expires_at__gt=now).update(
+    n = stale.exclude(Exists(protecting_orders(now).filter(unit=OuterRef("pk")))).update(
         status=ListingUnit.Status.AVAILABLE, held_by=None, held_until=None)
     for listing in Listing.objects.filter(id__in=listing_ids):
         listing.refresh_stock_status()
@@ -67,7 +98,8 @@ def _pick_unit(listing: Listing, unit_id=None) -> ListingUnit:
         if not unit:
             raise BusinessRuleError("Sorry, this item is sold out.")
     free = unit.status == ListingUnit.Status.AVAILABLE or (
-        unit.status == ListingUnit.Status.HELD and unit.held_until and unit.held_until <= timezone.now())
+        unit.status == ListingUnit.Status.HELD and unit.held_until and unit.held_until <= timezone.now()
+        and not _unit_is_protected(unit))
     if not free:
         raise BusinessRuleError(f"{unit.label or unit.code} has just been reserved by someone else. Choose another one.")
     return unit
@@ -86,22 +118,34 @@ def _release_unit(order: Order):
 def create_order(*, user, listing: Listing, plan: str, unit_id=None, months: int = 0, down_payment=None,
                  delivery_method: str = Order.Delivery.PICKUP, delivery_address: str = "", buyer_name: str = "",
                  buyer_id_number: str = "", contact_phone: str = "", contact_email: str = "", note: str = "",
-                 funding_source: str = Order.Funding.DIRECT, by=None) -> Order:
+                 funding_source: str = Order.Funding.DIRECT, by=None, product_equb=None) -> Order:
+    """
+    Every new order is paid by bank transfer straight into the seller's account: it gets a payment code and a frozen
+    copy of that account, and the unit is held for ``FIRST_RECEIPT_HOLD_HOURS`` for the first receipt.
+    ``product_equb`` (internal): the order for a product-Equb winner, paid by the Equb payout.
+    """
     # of=("self",): PostgreSQL can't lock the nullable side of the outer join to the company.
     listing = Listing.objects.select_for_update(of=("self",)).select_related("company", "category").get(pk=listing.pk)
-    if listing.status not in (Listing.Status.ACTIVE, Listing.Status.SOLD_OUT):
-        raise BusinessRuleError("This item is not for sale right now.")
+    if product_equb is None:
+        if plan == Order.Plan.EQUB_PAYOUT:
+            raise BusinessRuleError("“Equb payout” is no longer a way to pay. Join this product's Equb instead, "
+                                    "or choose another way to pay.")
+        if listing.status not in (Listing.Status.ACTIVE, Listing.Status.SOLD_OUT):
+            raise BusinessRuleError("This item is not for sale right now.")
     if listing.company_id and listing.company.status == "SUSPENDED":
         raise BusinessRuleError("This seller is not taking orders right now.")
-    if plan == Order.Plan.EQUB_PAYOUT:
-        funding_source = Order.Funding.EQUB_PAYOUT
     delivery = delivery_method == Order.Delivery.DELIVERY
     if delivery and len(delivery_address.strip()) < 5:
         raise BusinessRuleError("Enter the delivery address.")
-    unit = _pick_unit(listing, unit_id)
-    q = pricing.quote(listing, unit=unit, plan=plan, months=months, down_payment=down_payment, delivery=delivery)
+    if product_equb is not None:
+        unit = ListingUnit.objects.select_for_update().get(pk=unit_id, equb_group=product_equb)
+        q = pricing.quote(listing, unit=unit, plan=Order.Plan.FULL, delivery=delivery, any_plan=True)
+        plan, funding_source = Order.Plan.EQUB_PAYOUT, Order.Funding.EQUB_PAYOUT
+    else:
+        unit = _pick_unit(listing, unit_id)
+        q = pricing.quote(listing, unit=unit, plan=plan, months=months, down_payment=down_payment, delivery=delivery)
     now = timezone.now()
-    order = Order.objects.create(
+    order = Order(
         user=user, listing=listing, unit=unit, company=listing.company, plan=plan,
         unit_price=q.unit_price, delivery_fee=q.delivery_fee, finance_charge=q.finance_charge,
         total_amount=q.total, first_payment=q.first_payment, installment_months=q.months,
@@ -109,14 +153,32 @@ def create_order(*, user, listing: Listing, plan: str, unit_id=None, months: int
         delivery_method=delivery_method, delivery_address=delivery_address.strip()[:255],
         buyer_name=(buyer_name or user.full_name or "").strip()[:120], buyer_id_number=buyer_id_number.strip()[:40],
         contact_phone=(contact_phone or user.phone)[:16], contact_email=(contact_email or user.email or "")[:254],
-        note=note.strip()[:255], expires_at=now + timedelta(minutes=settings.NEBRET["ORDER_PAYMENT_WINDOW_MINUTES"]),
+        note=note.strip()[:255], expires_at=now + timedelta(hours=settings.NEBRET["FIRST_RECEIPT_HOLD_HOURS"]),
     )
+    if product_equb is not None:
+        order.payment_method, order.expires_at = Order.PaymentMethod.EQUB, None
+        order.save()
+        unit.status, unit.held_by, unit.held_until = ListingUnit.Status.RESERVED, user, None
+        unit.save(update_fields=["status", "held_by", "held_until"])
+        log_event(order, OrderEvent.Kind.CREATED, f"Won in {product_equb.name} · {unit.label or unit.code}.", by=by)
+        return order
+    from .bank_transfer import pay_to_account
+    from ..models import new_payment_code
+
+    order.pay_to_account = pay_to_account(order)
+    order.payment_code = new_payment_code()
+    order.payment_method = Order.PaymentMethod.BANK_TRANSFER
+    order.save()
     unit.status, unit.held_by, unit.held_until = ListingUnit.Status.HELD, user, order.expires_at
     unit.save(update_fields=["status", "held_by", "held_until"])
     listing.refresh_stock_status()
     log_event(order, OrderEvent.Kind.CREATED,
               f"{order.get_plan_display()} · {unit.label or unit.code} held until "
-              f"{timezone.localtime(order.expires_at):%d %b %H:%M}.", by=by or user)
+              f"{timezone.localtime(order.expires_at):%d %b %H:%M} for the first bank-transfer receipt "
+              f"(payment code {order.payment_code}).", by=by or user)
+    from apps.chat.services import link_order
+
+    transaction.on_commit(lambda: link_order(order.pk))
     return order
 
 
@@ -272,6 +334,8 @@ def on_order_paid(txn):
 
 
 def on_order_payment_failed(txn):
+    if txn.provider == "bank":
+        return  # receipts: the receipt service already logged the rejection and told the buyer why
     order = _order_of(txn.target)
     if order:
         log_event(order, OrderEvent.Kind.PAYMENT,
@@ -300,6 +364,9 @@ def start_payment(order: Order, user, *, count: int = 1, amount=None, provider=N
 
     if order.user_id != user.id:
         raise BusinessRuleError("You can only pay for your own order.")
+    if order.payment_method != Order.PaymentMethod.LEGACY:
+        raise BusinessRuleError("Marketplace payments are made by bank transfer straight to the seller. Open the "
+                                "order to see the account and payment code, then upload your receipt.")
     if order.status == Order.Status.PENDING_PAYMENT:
         if not order.is_payable:
             raise BusinessRuleError("This order has expired. Place a new order.")
@@ -325,14 +392,19 @@ def start_payment(order: Order, user, *, count: int = 1, amount=None, provider=N
 # =========================================================================== cancel / expire / defaults
 def cancellation_policy(order: Order) -> dict:
     out = {"can_cancel": False, "refundable": False, "refund_estimate": "0.00", "message": "", "code": ""}
-    if order.status == Order.Status.PENDING_PAYMENT and order.amount_paid <= 0:
+    in_review = order.proofs.filter(status__in=["SUBMITTED", "VERIFYING", "VERIFIED_AWAITING_PARTNER",
+                                                "DISPUTED"]).exists()
+    if order.status == Order.Status.PENDING_PAYMENT and order.amount_paid <= 0 and not in_review:
         out.update(can_cancel=True, code="unpaid", message="Nothing has been paid yet. Cancelling releases the item.")
+    elif order.status == Order.Status.PENDING_PAYMENT and in_review:
+        out.update(code="in_review", message="A receipt is being checked. Chat with Nebret support if you want to "
+                                             "cancel – the seller refunds anything it received and Nebret tracks it.")
     elif order.status == Order.Status.RESERVED:
         out.update(code="reserved", message="Reservation fees are non-refundable once the item is reserved. "
-                                            "Contact the seller or Nebret to change your order.")
+                                            "Chat with the seller or Nebret support to change your order.")
     elif order.status in (Order.Status.INSTALLMENTS, Order.Status.PAID):
-        out.update(code="paid", message="This order is paid or being paid. Contact Nebret to cancel – refunds "
-                                        "follow the seller's terms.")
+        out.update(code="paid", message="This order is paid or being paid. Chat with Nebret support to cancel – the "
+                                        "seller refunds you under its terms and Nebret tracks the refund.")
     else:
         out.update(code="closed", message="This order can no longer be changed.")
     return out
@@ -351,13 +423,21 @@ def cancel_order(order: Order, reason: str = "Cancelled by customer", *, staff=N
     order.cancellation_reason = (reason or "Cancelled")[:255]
     order.cancelled_by = staff
     order.expires_at = None
+    if was_paid and order.payment_method == Order.PaymentMethod.BANK_TRANSFER:
+        order.refund_due_by = timezone.localdate() + timedelta(days=settings.NEBRET["REFUND_DEADLINE_DAYS"])
     order.save()
+    from .bank_transfer import expire_open_proofs
+
+    expire_open_proofs(order, "Order cancelled", by=staff)
     _release_unit(order)
     order.installments.exclude(status=Installment.Status.PAID).update(status=Installment.Status.WAIVED)
     log_event(order, OrderEvent.Kind.CANCELLED, reason or "Cancelled", by=staff or order.user)
     if notify_customer and (staff is not None or was_paid):
         body = f"Order {order.reference} ({order.listing.title}) has been cancelled."
-        if was_paid:
+        if was_paid and order.refund_due_by:
+            body += (f" The seller refunds you by {order.refund_due_by:%d %b %Y}; Nebret tracks the refund and "
+                     "confirms it in the app.")
+        elif was_paid:
             body += " Our team will process any refund due to you and confirm it in the app."
         transaction.on_commit(lambda: notify(order.user, Notification.Kind.ORDER, "Order cancelled", body,
                                              {"order": order.reference}))
@@ -365,12 +445,14 @@ def cancel_order(order: Order, reason: str = "Cancelled by customer", *, staff=N
 
 
 def expire_unpaid_orders() -> int:
+    """Orders not paid in time expire and free their unit – never one with money paid or a receipt under review."""
     n = 0
     for order in Order.objects.filter(status=Order.Status.PENDING_PAYMENT, expires_at__lt=timezone.now(),
-                                      amount_paid__lte=0):
+                                      amount_paid__lte=0).exclude(pk__in=_receipts_in_review()):
         with transaction.atomic():
             o = Order.objects.select_for_update().select_related("listing").get(pk=order.pk)
-            if o.status != Order.Status.PENDING_PAYMENT or o.amount_paid > 0:
+            if (o.status != Order.Status.PENDING_PAYMENT or o.amount_paid > 0
+                    or _receipts_in_review().filter(object_id=o.pk).exists()):
                 continue
             o.status = Order.Status.EXPIRED
             o.save(update_fields=["status", "updated_at"])
@@ -412,7 +494,7 @@ def sweep_installments() -> dict:
                                                f"{fmt(order.balance_due)} ETB still unpaid – follow up.")
         Order.objects.filter(pk=order.pk).update(status=Order.Status.DEFAULTED)
         notify(order.user, Notification.Kind.ORDER, "Reservation ended",
-               f"Your reservation of {order.listing.title} ended before the balance was paid. Contact Nebret.",
+               f"Your reservation of {order.listing.title} ended before the balance was paid. Contact Nebret Equb.",
                {"order": order.reference})
         lapsed += 1
     return {"late": late, "reminded": reminded, "reservations_lapsed": lapsed}
@@ -432,5 +514,5 @@ def complete_handover(order: Order, *, staff, note: str = "") -> Order:
     log_event(order, OrderEvent.Kind.HANDED_OVER, note or "Handed over to the customer.", by=staff)
     transaction.on_commit(lambda: notify(
         order.user, Notification.Kind.ORDER, "Handed over – congratulations! 🔑",
-        f"{order.listing.title} is now yours. Thank you for buying with Nebret.", {"order": order.reference}))
+        f"{order.listing.title} is now yours. Thank you for buying with Nebret Equb.", {"order": order.reference}))
     return order

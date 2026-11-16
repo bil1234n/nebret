@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from apps.agencies.models import AgencyLedgerEntry
 from apps.agencies.services import add_staff
 from apps.core.exceptions import BusinessRuleError
-from apps.core.testutils import client_for, make_company, make_listing, make_user
+from apps.core.testutils import bank_pay, client_for, make_company, make_listing, make_user
 
 from .models import Installment, ListingUnit, Order
 from .services import handover, operations, orders, pricing
@@ -75,10 +75,18 @@ class OrderFlowTests(TestCase):
         self.assertEqual(r.status_code, 201, r.data)
         return r.data
 
-    def pay(self, reference, **data):
-        r = self.api.post(f"/api/market/orders/{reference}/pay/", {"provider": "mock", **data}, format="json")
-        self.assertEqual(r.status_code, 201, r.data)
-        return checkout(r.data["reference"])
+    def pay(self, reference, count=1, amount=None):
+        """Pay what is due now (or ``count`` installments) by bank transfer: receipt → bank check → confirmation."""
+        order = Order.objects.get(reference=reference)
+        if amount is None and order.status == Order.Status.INSTALLMENTS:
+            amount = Decimal(orders.installment_options(order)[count - 1]["amount"])
+        return bank_pay(order, amount)
+
+    def test_gateway_checkout_refused_for_new_orders(self):
+        o = self.order(plan="FULL")
+        r = self.api.post(f"/api/market/orders/{o['reference']}/pay/", {"provider": "mock"}, format="json")
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("bank transfer", r.data["detail"])
 
     def test_full_payment_then_handover(self):
         o = self.order(plan="FULL")
@@ -168,8 +176,16 @@ class OrderFlowTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.REFUNDED)
 
-    def test_office_payment(self):
+    def test_office_payment_off_for_bank_transfer_orders(self):
         o = self.order(plan="FULL")
+        order = Order.objects.get(reference=o["reference"])
+        staff = make_user("Staff", staff=True)
+        with self.assertRaises(BusinessRuleError):
+            operations.record_office_payment(order, staff, amount=order.total_amount, method="cash")
+
+    def test_office_payment_for_old_orders(self):
+        o = self.order(plan="FULL")
+        Order.objects.filter(reference=o["reference"]).update(payment_method="")  # placed before bank transfers
         order = Order.objects.get(reference=o["reference"])
         staff = make_user("Staff", staff=True)
         with self.assertRaises(BusinessRuleError):
@@ -200,7 +216,14 @@ class EqubPayoutTests(TestCase):
                                        draw_date=timezone.localdate())
         payout = EqubPayout.objects.create(round=rnd, membership=m, amount=Decimal("70000"), voucher_code="EQTEST01")
         api = client_for(user)
-        o = api.post("/api/market/orders/", {"listing": listing.slug, "plan": "EQUB_PAYOUT"}, format="json").data
+        # New orders can't choose "Equb payout" any more …
+        r = api.post("/api/market/orders/", {"listing": listing.slug, "plan": "EQUB_PAYOUT"}, format="json")
+        self.assertEqual(r.status_code, 409)
+        # … but an old Equb-payout order (placed before the change) still finishes with its voucher.
+        legacy = orders.create_order(user=user, listing=listing, plan=Order.Plan.FULL)
+        Order.objects.filter(pk=legacy.pk).update(plan=Order.Plan.EQUB_PAYOUT, payment_method="", payment_code=None,
+                                                 funding_source=Order.Funding.EQUB_PAYOUT)
+        o = {"reference": legacy.reference}
         r = api.post(f"/api/market/orders/{o['reference']}/use-payout/", {"voucher_code": "EQTEST01"}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["status"], "PAID")
@@ -220,12 +243,14 @@ class CompanyTests(TestCase):
         user = make_user("Buyer")
         api = client_for(user)
         o = api.post("/api/market/orders/", {"listing": self.listing.slug, "plan": "FULL"}, format="json").data
-        txn = api.post(f"/api/market/orders/{o['reference']}/pay/", {"provider": "mock"}, format="json").data
-        checkout(txn["reference"])
+        bank_pay(Order.objects.get(reference=o["reference"]), confirmer=self.owner)
         entry = AgencyLedgerEntry.objects.get()
         self.assertEqual(entry.gross_amount, Decimal("3000000"))
         self.assertEqual(entry.commission, Decimal("150000.00"))
         self.assertEqual(entry.order.reference, o["reference"])
+        # the money went into the company's own account: the company owes Nebret the commission
+        self.assertEqual(entry.direction, AgencyLedgerEntry.Direction.TO_NEBRET)
+        self.assertEqual(entry.payout_status, AgencyLedgerEntry.Payout.RECEIVABLE)
 
     def test_company_portal_pages(self):
         self.client.force_login(self.owner)
@@ -242,10 +267,12 @@ class ConsolePageTests(TestCase):
         listing = make_listing()
         order = orders.create_order(user=make_user("Buyer"), listing=listing, plan=Order.Plan.FULL)
         pages = ["dashboard", "orders", "installments", "handover", "listings", "listing_add", "inquiries", "agencies",
-                 "agency_add", "settings", "category_add", "users", "payments", "sell", "equbs", "community"]
+                 "agency_add", "settings", "category_add", "users", "payments", "sell", "equbs", "community",
+                 "proofs", "alerts", "bank_accounts", "commission", "conversations"]
         for name in pages:
             self.assertEqual(self.client.get(reverse(f"console:{name}")).status_code, 200, name)
         self.assertEqual(self.client.get(reverse("console:order", args=[order.reference])).status_code, 200)
         self.assertEqual(self.client.get(reverse("console:listing", args=[listing.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("console:listing_equb", args=[listing.pk])).status_code, 200)
         self.assertEqual(self.client.get(reverse("console:orders") + "?export=csv").status_code, 200)
         self.assertEqual(self.client.get("/").status_code, 200)

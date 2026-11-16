@@ -17,11 +17,62 @@ from .orders import apply_payment, fmt, log_event
 OFFICE_METHODS = {"cash": "Cash", "bank": "Bank transfer", "mobile": "Mobile money"}
 
 
+PAID_TO = {"company": "the company", "nebret": "Nebret"}
+
+
+def _paid_to(order: Order, staff, paid_to: str | None) -> str:
+    """
+    Who physically received the money. Company staff recording a payment always means the company has it. Nebret
+    staff say where it went; by default the company, because marketplace money goes straight to the seller.
+    """
+    if not order.company_id:
+        return "nebret"  # Nebret's own listing: there is no company to owe or be owed
+    from apps.agencies.services import staff_for
+
+    st = staff_for(staff)
+    if st and st.agency_id == order.company_id:
+        return "company"
+    paid_to = (paid_to or "company").lower()
+    if paid_to not in PAID_TO:
+        raise BusinessRuleError("Say who received the money: the company or Nebret.")
+    return paid_to
+
+
+def record_office_payment(order: Order, staff, *, amount, method: str, reference: str = "", note: str = "",
+                          bank: str = "", paid_to: str | None = None) -> Order:
+    """
+    Cash / bank / mobile money taken at the office or at the seller's showroom.
+
+    Bank and mobile-money references can be used only once across all of Nebret. A reused reference is refused with a
+    clear message and raises a fraud alert to Nebret staff (written after the rollback, so it is kept).
+    """
+    from apps.payments import references
+
+    try:
+        return _record_office_payment(order, staff, amount=amount, method=method, reference=reference, note=note,
+                                      bank=bank, paid_to=paid_to)
+    except references.DuplicateReference as exc:
+        references.raise_alert(exc, user=staff, agency=order.company if order.company_id else None,
+                               order_reference=order.reference, amount=amount,
+                               context=f"office payment recorded by {getattr(staff, 'full_name', '') or staff}")
+        raise
+
+
 @transaction.atomic
-def record_office_payment(order: Order, staff, *, amount, method: str, reference: str = "", note: str = "") -> Order:
-    """Cash / bank / mobile money taken at the office or at the seller's showroom."""
+def _record_office_payment(order: Order, staff, *, amount, method: str, reference: str, note: str, bank: str,
+                           paid_to: str | None) -> Order:
+    from apps.payments import references
+    from apps.payments.models import BankReference
+
+    from django.conf import settings
+
     if method not in OFFICE_METHODS:
         raise BusinessRuleError("Choose cash, bank transfer or mobile money.")
+    order = Order.objects.select_for_update(of=("self",)).select_related("company").get(pk=order.pk)
+    if order.payment_method and not settings.NEBRET.get("MARKET_OFFICE_PAYMENTS"):
+        raise BusinessRuleError("Marketplace payments are bank transfers into the seller's account. Upload the "
+                                "buyer's bank receipt on the order instead – it is verified with the bank and then "
+                                "confirmed by the seller.")
     if order.status not in (Order.Status.PENDING_PAYMENT, Order.Status.RESERVED, Order.Status.INSTALLMENTS):
         raise BusinessRuleError("Nothing is due on this order.")
     amount = money(amount)
@@ -29,25 +80,33 @@ def record_office_payment(order: Order, staff, *, amount, method: str, reference
         raise BusinessRuleError("Enter the amount received.")
     if amount > order.balance_due:
         raise BusinessRuleError(f"Only {fmt(order.balance_due)} ETB is left to pay on this order.")
-    if method in ("bank", "mobile") and not reference.strip():
+    ref = references.normalise_reference(reference)
+    if method in ("bank", "mobile") and not ref:
         raise BusinessRuleError("Enter the transfer reference so the payment can be traced.")
+    bank_code = BankReference.MOBILE if method == "mobile" else references.normalise_bank(bank)
+    if method in ("bank", "mobile"):
+        references.check_unused(bank_code, ref)  # clear error before anything is written
+    paid_to = _paid_to(order, staff, paid_to)
     purpose = (PaymentTransaction.Purpose.INSTALLMENT if order.status == Order.Status.INSTALLMENTS
                else PaymentTransaction.Purpose.ORDER)
     txn = PaymentTransaction.objects.create(
         user=order.user, provider=method, purpose=purpose, amount=amount, status=PaymentTransaction.Status.SUCCESS,
-        target=order, provider_reference=reference.strip()[:128] or order.reference, payer_phone=order.contact_phone,
+        target=order, provider_reference=ref or order.reference, payer_phone=order.contact_phone,
         completed_at=timezone.now(), fulfilled=True, recorded_by=staff, agency=order.company,
         platform_fee=order.company.commission_on(amount) if order.company_id else Decimal("0"),
-        raw_request={"recorded_by": getattr(staff, "full_name", ""), "note": note[:255]},
+        raw_request={"recorded_by": getattr(staff, "full_name", ""), "note": note[:255], "paid_to": paid_to,
+                     **({"bank": bank_code, "reference_as_typed": reference.strip()[:128]} if ref else {})},
     )
-    order = apply_payment(order, amount, reference=reference.strip(), by=staff,
-                          label=f"{OFFICE_METHODS[method]} at the office")
+    if method in ("bank", "mobile"):
+        references.claim(bank_code, ref, payment=txn, source="office")
+    order = apply_payment(order, amount, reference=ref, by=staff,
+                          label=f"{OFFICE_METHODS[method]} paid to {PAID_TO[paid_to]}")
     if note:
         log_event(order, OrderEvent.Kind.NOTE, note, by=staff)
     if order.company_id:
         from apps.agencies.services import record_commission
 
-        record_commission(txn)
+        record_commission(txn, paid_to_company=paid_to == "company")
     return order
 
 

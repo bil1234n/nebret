@@ -52,19 +52,30 @@ def _split(agency: Agency, gross: Decimal) -> tuple[Decimal, Decimal]:
     return commission, gross - commission
 
 
-def record_commission(txn) -> AgencyLedgerEntry | None:
-    """Called once a gateway payment for an agency sale succeeds (idempotent)."""
+def record_commission(txn, *, paid_to_company: bool = False) -> AgencyLedgerEntry | None:
+    """
+    Called once a payment for an agency sale succeeds (idempotent).
+
+    ``paid_to_company`` – the money went straight to the company (its own bank account, or cash at its showroom), so
+    Nebret holds nothing: the company owes Nebret the commission (RECEIVABLE). Otherwise Nebret collected the money
+    and owes the company its share (OWED), unless Chapa already settled it (SETTLED_BY_CHAPA).
+    """
     if not txn.agency_id or AgencyLedgerEntry.objects.filter(payment=txn).exists():
         return None
     agency = txn.agency
     commission, share = _split(agency, txn.amount)
     order = _order_of(txn.target)
+    if paid_to_company:
+        direction, status = AgencyLedgerEntry.Direction.TO_NEBRET, Payout.RECEIVABLE
+    else:
+        direction = AgencyLedgerEntry.Direction.TO_COMPANY
+        status = Payout.SETTLED_BY_CHAPA if txn.split_settled else Payout.OWED
     try:
         with transaction.atomic():
             return AgencyLedgerEntry.objects.create(
                 agency=agency, kind=AgencyLedgerEntry.Kind.GATEWAY, order=order, payment=txn, customer=txn.user,
                 gross_amount=txn.amount, commission_percent=agency.commission_percent, commission=commission,
-                agency_amount=share, payout_status=Payout.SETTLED_BY_CHAPA if txn.split_settled else Payout.OWED,
+                agency_amount=share, direction=direction, payout_status=status,
                 description=f"{txn.get_provider_display()} · {txn.get_purpose_display()} · "
                             f"{getattr(order, 'reference', '')} {getattr(getattr(order, 'listing', None), 'title', '')}"
                             .strip()[:200])
@@ -110,19 +121,28 @@ def on_order_saved(sender, instance, created, **kwargs):
 
 
 def reverse_for_refund(order) -> int:
-    """A refunded order: owed entries are cancelled so they are not paid out."""
-    return AgencyLedgerEntry.objects.filter(order=order, payout_status=Payout.OWED).update(
+    """
+    A refunded order: entries not yet settled either way are cancelled – the company's share is not paid out, and
+    commission not yet collected from the company is no longer due.
+    """
+    return AgencyLedgerEntry.objects.filter(order=order, payout_status__in=[Payout.OWED, Payout.RECEIVABLE]).update(
         payout_status=Payout.REVERSED)
 
 
 def summary(agency: Agency, since=None) -> dict:
-    qs = agency.ledger.exclude(payout_status=Payout.REVERSED)
+    """
+    ``owed`` – what Nebret still has to pay the company. ``receivable`` – commission the company still has to pay
+    Nebret (money it received directly). ``net`` – positive: Nebret pays the company; negative: the company pays.
+    """
+    qs = agency.ledger.exclude(payout_status__in=[Payout.REVERSED, Payout.WRITTEN_OFF])
     if since:
         qs = qs.filter(created_at__gte=since)
     agg = qs.aggregate(gross=Sum("gross_amount"), commission=Sum("commission"), share=Sum("agency_amount"))
     owed = agency.ledger.filter(payout_status=Payout.OWED).aggregate(s=Sum("agency_amount"))["s"] or ZERO
+    receivable = agency.ledger.filter(payout_status__in=AgencyLedgerEntry.NEBRET_RECEIVABLE).aggregate(
+        s=Sum("commission"))["s"] or ZERO
     return {"gross": agg["gross"] or ZERO, "commission": agg["commission"] or ZERO, "share": agg["share"] or ZERO,
-            "owed": owed, "sales": qs.count()}
+            "owed": owed, "receivable": receivable, "net": owed - receivable, "sales": qs.count()}
 
 
 @transaction.atomic
@@ -243,8 +263,15 @@ def enrol(customer: AgencyCustomer, group, *, family_member: FamilyMember | None
 
 # --------------------------------------------------------------------------- sales
 def start_checkout(order, *, count: int = 1, provider: str | None = None):
-    """Create (or reuse) the customer's payment link for what is due now on an order – Chapa by default."""
+    """
+    Old (gateway) orders only: create the customer's payment link. New marketplace orders are paid by bank transfer
+    straight into the company's account – see ``market.services.bank_transfer.bank_instructions``.
+    """
     from apps.market.services.orders import start_payment
+
+    if order.payment_method:
+        raise BusinessRuleError("This order is paid by bank transfer into your account – share the bank "
+                                "instructions instead of a payment link.")
 
     provider = provider or ("chapa" if settings.PAYMENT_GATEWAYS.get("chapa", {}).get("SECRET_KEY")
                             else settings.NEBRET["DEFAULT_PAYMENT_PROVIDER"])

@@ -1,0 +1,58 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Receipt {{ p.normalised_reference }}{% endblock %}{% block heading %}Receipt {{ p.bank }} {{ p.normalised_reference }}{% endblock %}
+{% block crumbs %}<a href="{% url 'console:proofs' %}">Receipts</a> / <a href="{% url 'console:order' o.reference %}">{{ o.reference }}</a> · {{ o.user.full_name }}{% endblock %}
+{% block actions %}{{ p.status|status_badge:p.get_status_display }}{% endblock %}
+{% block content %}
+<div class="grid g-4">
+  <div class="card kpi dark"><div class="label">Claimed</div><div class="value">{{ p.amount_claimed|compact }} <small style="font-size:14px">{{ p.currency }}</small></div><div class="sub">{{ p.transfer_datetime|date:"d M Y H:i" }}</div></div>
+  <div class="card kpi"><div class="label">Verified</div><div class="value">{{ p.amount_verified|default:"—" }}</div><div class="sub">{% if p.verified_at %}{{ p.verified_at|date:"d M H:i" }}{% if p.verified_by %} by {{ p.verified_by.full_name }}{% endif %}{% else %}&nbsp;{% endif %}</div></div>
+  <div class="card kpi gold"><div class="label">Due now on order</div><div class="value">{{ o.amount_due_now|compact }}</div><div class="sub">balance {{ o.balance_due|money }}</div></div>
+  <div class="card kpi"><div class="label">Payment code</div><div class="value mono">{{ o.payment_code }}</div><div class="sub">must be in the narration</div></div>
+</div>
+<div class="grid g-2 mt">
+  <div class="card"><div class="card-h"><h2>Receipt</h2>{% if receipt_url %}<a class="btn sm" href="{{ receipt_url }}" target="_blank" rel="noopener">Open receipt (5 min link)</a>{% endif %}</div>
+    <dl class="kv"><dt>Sent from</dt><dd>{{ row.bank_label }}</dd><dt>Reference</dt><dd class="mono">{{ p.normalised_reference }} <span class="muted small">(typed “{{ p.reference_as_typed }}”)</span></dd>
+      <dt>Payer</dt><dd>{{ p.payer_name }} {% if p.payer_account %}<span class="mono small muted">{{ p.payer_account }}</span>{% endif %}</dd>
+      <dt>Buyer</dt><dd>{{ o.buyer_name|default:o.user.full_name }}{% if o.co_payers %}<div class="small muted">Co-payers: {{ o.co_payers|join:", " }}</div>{% endif %}</dd>
+      <dt>Paid into</dt><dd>{{ o.pay_to_account.bank_name }} <span class="mono">{{ o.pay_to_account.account_number }}</span><div class="small muted">{{ o.pay_to_account.account_name }} · {{ o.pay_to_account.currency }}</div></dd>
+      <dt>Uploaded by</dt><dd>{{ p.submitted_by.full_name|default:"—" }} · {{ p.created_at|date:"d M Y H:i" }}</dd>
+      {% if p.rejection_reason %}<dt>Rejected</dt><dd>{{ p.rejection_reason }}</dd>{% endif %}
+      {% if p.dispute_reason %}<dt>Dispute</dt><dd>{{ p.dispute_reason }}</dd>{% endif %}</dl></div>
+  <div class="card"><div class="card-h"><h2>Bank check (ShegerPay)</h2><span>{{ p.verify_attempts }} attempt{{ p.verify_attempts|pluralize }}{% if p.shegerpay_checked_at %} · last {{ p.shegerpay_checked_at|date:"d M H:i" }}{% endif %}</span></div>
+    {% with r=p.shegerpay_response %}<dl class="kv"><dt>Outcome</dt><dd>{{ r.outcome|default:"not checked yet" }}{% if p.requires_manual_review %} · <b>manual review needed</b>{% endif %}</dd>
+      <dt>Reason</dt><dd>{{ r.reason|default:"—" }}</dd><dt>Amount</dt><dd>{{ r.amount|default:"—" }}</dd><dt>Payer</dt><dd>{{ r.payer|default:"—" }}</dd>
+      <dt>Receiver</dt><dd class="mono">{{ r.receiver_account|default:"not returned" }}</dd><dt>Narration</dt><dd>{{ r.narration|default:"not returned" }}</dd>
+      <dt>Transfer time</dt><dd>{{ r.transferred_at|default:"not returned" }}</dd></dl>{% endwith %}
+    {% if p.status == 'SUBMITTED' or p.status == 'VERIFYING' %}<form method="post">{% csrf_token %}<button class="btn ghost sm" name="action" value="recheck">Check with the bank again</button></form>{% endif %}</div>
+</div>
+{% if p.partner_confirmed_by %}<div class="card mt"><div class="card-h"><h2>Seller's confirmation</h2></div>
+  <dl class="kv"><dt>Confirmed by</dt><dd>{{ p.partner_confirmed_by.full_name }} · {{ p.partner_confirmed_at|date:"d M H:i" }}{% if p.second_confirmer %} and {{ p.second_confirmer.full_name }} · {{ p.second_confirmed_at|date:"d M H:i" }}{% endif %}</dd>
+    <dt>Statement shows</dt><dd>{{ p.partner_confirmed_amount|money }} from {{ p.partner_confirmed_payer }} at {{ p.partner_confirmed_datetime|date:"d M Y H:i" }} · ref <span class="mono">{{ p.partner_statement_ref }}</span></dd>
+    {% if p.on_behalf_note %}<dt>Nebret note</dt><dd>{{ p.on_behalf_note }}{% if evidence_url %} · <a href="{{ evidence_url }}" target="_blank">evidence</a>{% endif %}</dd>{% endif %}</dl></div>{% endif %}
+
+{% if p.requires_manual_review and p.status == 'VERIFYING' or p.requires_manual_review and p.status == 'SUBMITTED' %}
+<form method="post" class="card mt" style="border:2px solid var(--gold)">{% csrf_token %}
+  <div class="card-h"><h2>Manual review</h2><span>ShegerPay can't check this bank / currency / receipt – check it with the bank yourself</span></div>
+  <div class="form-grid"><div class="field"><label>Verified amount</label><input type="number" step="0.01" name="amount" value="{{ p.amount_claimed|stringformat:'s' }}"></div>
+    <div class="field wide"><label>What you checked (required)</label><input type="text" name="note" required></div></div>
+  <button class="btn" name="action" value="approve">Verified – send to the seller</button> <button class="btn ghost" name="action" value="decline">Reject receipt</button></form>
+{% endif %}
+{% if p.status == 'VERIFIED_AWAITING_PARTNER' or p.status == 'DISPUTED' %}
+<div class="grid g-2 mt">
+<form method="post" enctype="multipart/form-data" class="card">{% csrf_token %}<input type="hidden" name="action" value="confirm">
+  <div class="card-h"><h2>Confirm for the seller</h2><span>{% if o.company %}Needs a note and evidence (the seller's statement){% else %}Nebret listing – Nebret confirms{% endif %}</span></div>
+  <div class="form-grid"><div class="field"><label>Amount credited</label><input type="number" step="0.01" name="amount" required></div>
+    <div class="field"><label>Payer on statement</label><input type="text" name="payer_name" required></div>
+    <div class="field"><label>Credited at</label><input type="datetime-local" name="credited_at" required></div>
+    <div class="field"><label>Statement reference</label><input type="text" name="statement_ref" required></div>
+    {% if o.company %}<div class="field wide"><label>Note</label><input type="text" name="note" required></div>
+    <div class="field"><label>Evidence</label><input type="file" name="evidence" accept="image/jpeg,image/png,application/pdf" required></div>{% endif %}</div>
+  {% if row.dual_control %}<p class="small muted">Above the dual-control threshold: a second, different person must confirm too.</p>{% endif %}
+  <button class="btn">Confirm</button></form>
+<form method="post" class="card">{% csrf_token %}<input type="hidden" name="action" value="reject">
+  <div class="card-h"><h2>Reject</h2></div><div class="field"><label>Reason (sent to the buyer)</label><input type="text" name="reason" required></div>
+  <button class="btn ghost">Reject receipt</button></form></div>
+{% endif %}
+{% if alerts %}<div class="card mt"><div class="card-h"><h2>Alerts</h2></div><ul>{% for a in alerts %}<li class="small">{{ a.created_at|date:"d M H:i" }} · <b>{{ a.get_kind_display }}</b> – {{ a.message }}{% if a.resolved_at %} <span class="muted">(resolved)</span>{% endif %}</li>{% endfor %}</ul></div>{% endif %}
+{% if others %}<div class="card mt"><div class="card-h"><h2>Other receipts on this order</h2></div><ul>{% for x in others %}<li class="small"><a href="{% url 'console:proof' x.pk %}">{{ x.bank }} {{ x.normalised_reference }}</a> · {{ x.amount_claimed|money }} · {{ x.get_status_display }}</li>{% endfor %}</ul></div>{% endif %}
+{% endblock %}

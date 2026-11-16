@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Company{% endblock %} · {{ agency.name }} · Nebret</title>
+  <title>{% block title %}Company{% endblock %} · {{ agency.name }} · Nebret Equb</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'console/console.css' %}">
@@ -29,7 +29,7 @@
       <a href="{% url 'agency:earnings' %}" class="{% if nav == 'earnings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Earnings</a>
       <a href="{% url 'agency:team' %}" class="{% if nav == 'team' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Team</a>
     </nav>
-    <div class="sidebar-foot">Powered by Nebret · {{ agency.commission_percent|floatformat:"-2" }}% platform fee</div>
+    <div class="sidebar-foot">Powered by Nebret Equb · {{ agency.commission_percent|floatformat:"-2" }}% platform fee</div>
   </aside>
   <main class="main">
     <div class="topbar">
@@ -54,7 +54,7 @@
       </div>
     </div>
     <div class="content">
-      {% if agency.status == 'PENDING' %}<div class="msg warning">Your company is waiting for approval by Nebret. You can prepare your listings as drafts; they go live and sales open once you are approved.</div>{% endif %}
+      {% if agency.status == 'PENDING' %}<div class="msg warning">Your company is waiting for approval by Nebret Equb. You can prepare your listings as drafts; they go live and sales open once you are approved.</div>{% endif %}
       {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
       {% block content %}{% endblock %}
     </div>

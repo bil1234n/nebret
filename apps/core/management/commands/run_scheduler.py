@@ -14,7 +14,9 @@ from apps.core.exceptions import BusinessRuleError
 
 
 class Command(BaseCommand):
-    help = ("Expire unpaid marketplace orders and stale unit holds, flag late installments and send reminders, send "
+    help = ("Verify bank-transfer receipts with ShegerPay and escalate overdue seller confirmations / refunds, issue "
+            "agreements, retire replaced bank accounts, pause listings without a bank account, release spare product-"
+            "Equb units, expire unpaid marketplace orders and stale unit holds, flag late installments and send reminders, send "
             "calendar (scheduled) Equb payments, flag late Equb contributions, send Equb reminders and standing notices, "
             "run due draws.")
 
@@ -39,8 +41,21 @@ class Command(BaseCommand):
         from apps.luckydraw.services import run_schedule as community_schedule
         from apps.market.services.orders import expire_unpaid_orders, sweep_installments
 
+        from apps.agencies.bank_accounts import pause_listings_without_account, retire_replaced_accounts
+        from apps.equb.product import release_spare_units
+        from apps.market.services import agreement, bank_transfer
+
         rules = EqubSettings.load()
-        out = {"orders_expired": expire_unpaid_orders()}
+        out = {}
+        # Bank-transfer receipts: verify with ShegerPay here, never inside an HTTP request (Vercel time limits).
+        out.update({f"receipts_{k}": v for k, v in bank_transfer.verify_due_proofs().items()})
+        out["receipts_sla_escalated"] = bank_transfer.escalate_overdue_confirmations()
+        out["refunds_escalated"] = bank_transfer.escalate_overdue_refunds()
+        out["agreements_issued"] = agreement.issue_missing_agreements()
+        out["bank_accounts_retired"] = retire_replaced_accounts()
+        out["listings_paused_no_account"] = pause_listings_without_account()
+        out["equb_units_released"] = release_spare_units()
+        out["orders_expired"] = expire_unpaid_orders()
         out.update({f"installments_{k}": v for k, v in sweep_installments().items()})
         out["late_contributions"] = sweep_late_contributions()
 

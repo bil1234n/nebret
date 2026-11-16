@@ -1,0 +1,19 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Commission receivables{% endblock %}{% block heading %}Commission receivables{% endblock %}
+{% block crumbs %}Commission companies owe Nebret on bank-transfer sales paid straight into their accounts · {{ total_due|money }} open{% endblock %}
+{% block content %}
+<div class="grid g-2">
+<div class="card"><div class="card-h"><h2>Open by company</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Company</th><th class="r">Sales</th><th class="r">Due</th></tr></thead><tbody>
+{% for r in by_company %}<tr><td><a href="{% qs company=r.agency__id page=None %}">{{ r.agency__name }}</a></td><td class="r num">{{ r.n }}</td><td class="r num strong">{{ r.due|money }}</td></tr>{% empty %}<tr><td colspan="3" class="empty">Nothing due.</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card"><div class="card-h"><h2>Filter</h2></div><form class="toolbar" method="get">
+  <select name="status"><option value="open" {% if status == 'open' %}selected{% endif %}>Open (due + invoiced)</option><option value="RECEIVABLE" {% if status == 'RECEIVABLE' %}selected{% endif %}>Due</option><option value="INVOICED" {% if status == 'INVOICED' %}selected{% endif %}>Invoiced</option><option value="COLLECTED" {% if status == 'COLLECTED' %}selected{% endif %}>Collected</option><option value="WRITTEN_OFF" {% if status == 'WRITTEN_OFF' %}selected{% endif %}>Written off</option></select>
+  <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.pk }}" {% if company == c.pk|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select><button class="btn">Show</button></form></div></div>
+<form method="post" class="card mt">{% csrf_token %}<div class="table-wrap"><table class="t">
+  <thead><tr><th></th><th>Date</th><th>Company</th><th>Order</th><th class="r">Sale</th><th class="r">Commission</th><th>Status</th></tr></thead><tbody>
+  {% for e in page %}<tr><td><input type="checkbox" name="entry" value="{{ e.pk }}"></td><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.agency.name }}</td>
+    <td>{% if e.order %}<a class="mono" href="{% url 'console:order' e.order.reference %}">{{ e.order.reference }}</a>{% endif %}<div class="small muted">{{ e.description|truncatechars:50 }}</div></td>
+    <td class="r num">{{ e.gross_amount|money }}</td><td class="r num strong">{{ e.commission|money }}</td><td>{{ e.payout_status|status_badge:e.get_payout_status_display }}{% if e.paid_reference %}<div class="small muted mono">{{ e.paid_reference }}</div>{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="7" class="empty">Nothing here.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="toolbar mt"><input type="text" name="reference" placeholder="Invoice no. / payment reference"><button class="btn sm" name="action" value="invoice">Mark invoiced</button><button class="btn sm" name="action" value="collected">Mark collected</button><button class="btn ghost sm" name="action" value="write_off">Write off</button></div>
+  {% include "console/_pagination.html" %}</form>
+{% endblock %}

@@ -258,3 +258,10 @@ def terms_html(text):
     from apps.equb.terms import to_html
 
     return mark_safe(to_html(text or ""))
+
+
+@register.filter
+def mask_phone(phone):
+    """Company staff never see a buyer's phone number (they use the in-app chat)."""
+    digits = "".join(c for c in str(phone or "") if c.isdigit())
+    return ("•" * max(len(digits) - 2, 0) + digits[-2:]) if digits else ""

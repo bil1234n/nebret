@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}{% load console_tags %}
+{% block title %}Product Equb · {{ l.title }}{% endblock %}{% block heading %}Win this with Equb{% endblock %}
+{% block crumbs %}<a href="{% url 'console:listing' l.pk %}">{{ l.title }}</a> · {{ l.price|money }} · {{ units_available }} unit{{ units_available|pluralize }} available{% endblock %}
+{% block content %}
+<form method="post" class="card" style="border:2px solid var(--gold)">{% csrf_token %}
+  <div class="card-h"><h2>New product Equb</h2><span>Every member wins once and receives the product. One unit per member is reserved now and the price is locked.</span></div>
+  <div class="form-grid">
+    <div class="field"><label>Name</label><input type="text" name="name" value="{{ post.name|default:'' }}" placeholder="{{ l.title }} Equb"></div>
+    <div class="field"><label>Contribution (ETB)</label><input type="number" step="0.01" name="contribution_amount" value="{{ post.contribution_amount|default:'' }}" required></div>
+    <div class="field"><label>Number of payments</label><input type="number" min="1" name="duration_value" value="{{ post.duration_value|default:'' }}" required></div>
+    <div class="field"><label>Paid every</label><select name="duration_unit">{% for v, lab in units %}<option value="{{ v }}" {% if post.duration_unit == v %}selected{% endif %}>{{ lab }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Members (= winners = units reserved)</label><input type="number" min="2" name="members" value="{{ post.members|default:'' }}" required></div>
+    <div class="field"><label>Draws (empty = one per member)</label><input type="number" min="1" name="rounds_drawn" value="{{ post.rounds_drawn|default:'' }}"></div>
+    <div class="field"><label>Start date</label><input type="date" name="start_date" value="{{ post.start_date|default:today|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}"></div>
+    <div class="field"><label>Draw</label><select name="draw_type"><option value="AUTOMATIC">Automatic fair draw</option><option value="MANUAL">Staff run the draw</option></select></div>
+    <div class="field wide"><label>Extra terms (shown before joining)</label><textarea name="terms" rows="3">{{ post.terms|default:'' }}</textarea></div>
+  </div>
+  {% if preview %}<div class="msg {% if preview.covers_price %}success{% else %}error{% endif %}">{{ preview.explanation }}</div>{% endif %}
+  <p class="small muted">Service fee {{ fee }}%. Each winner's payout (contribution × payments − fee) must be at least the product price.</p>
+  <button class="btn ghost" name="action" value="preview">Show the maths</button> <button class="btn" name="action" value="create">Create product Equb</button>
+</form>
+<div class="card mt"><div class="card-h"><h2>Product Equbs for this listing</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Status</th><th class="r">Contribution</th><th class="r">Members</th><th>Starts</th></tr></thead><tbody>
+{% for g in groups %}<tr><td><a href="{% url 'console:equb' g.slug %}">{{ g.name }}</a></td><td>{{ g.status|status_badge:g.get_status_display }}</td><td class="r num">{{ g.contribution_amount|money }} {{ g.every }}</td><td class="r num">{{ g.members_count }} / {{ g.max_members }}</td><td class="small">{{ g.start_date|date:"d M Y" }}</td></tr>
+{% empty %}<tr><td colspan="5" class="empty">None yet.</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

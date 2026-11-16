@@ -69,11 +69,45 @@ class CompanyApiTests(TestCase):
                           format="json")
         self.assertEqual(o.status_code, 201, o.data)
         ref = o.data["reference"]
+        self.assertTrue(o.data["payment_code"])
+        self.assertTrue(o.data["customer"]["phone"].startswith("••") and o.data["customer"]["phone"].endswith("13"))  # staff never see the buyer's number
+        # Office cash is off for marketplace orders – the buyer pays into the company's account by bank transfer.
         r = self.api.post(f"/api/company/orders/{ref}/", {"action": "payment", "method": "cash",
                                                           "amount": o.data["total_amount"]}, format="json")
+        self.assertEqual(r.status_code, 409)
+        # The buyer brings the receipt; staff upload it for them …
+        from django.utils import timezone as tz
+
+        from apps.market.models import BankTransferProof
+        from apps.market.services import bank_transfer
+        from apps.payments.verifiers import FakeVerifier
+
+        when = tz.now()
+        acc = o.data["pay_to_account"]["account_number"]
+        FakeVerifier.register("CBE", "FT26111ABCDE", amount=o.data["total_amount"], payer="Mahi Kebede",
+                              receiver_account=acc, transferred_at=when)
+        pdf = SimpleUploadedFile("r.pdf", b"%PDF-1.4 receipt", content_type="application/pdf")
+        r = self.api.post(f"/api/company/orders/{ref}/", {
+            "action": "proof", "file": pdf, "bank": "CBE", "reference": "FT26111ABCDE", "amount": o.data["total_amount"],
+            "transfer_datetime": when.isoformat(), "payer_name": "Mahi Kebede"}, format="multipart")
         self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["proofs"][0]["status"], "SUBMITTED")
+        # … the bank check runs in the background …
+        bank_transfer.verify_due_proofs()
+        queue = self.api.get("/api/company/payments/?tab=to_confirm").data
+        self.assertEqual(queue["count"], 1)
+        pid = queue["results"][0]["id"]
+        # … and the owner confirms what the statement shows.
+        r = self.api.post(f"/api/company/payments/{pid}/", {
+            "action": "confirm", "amount": o.data["total_amount"], "payer_name": "MAHI KEBEDE",
+            "credited_at": when.isoformat(), "statement_ref": "ST-001"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["status"], "CONFIRMED")
+        r = self.api.get(f"/api/company/orders/{ref}/")
         self.assertEqual(r.data["status"], "PAID")
         self.assertEqual(len(r.data["earnings"]), 1)
+        self.assertEqual(r.data["earnings"][0]["payout_status"], "RECEIVABLE")
+        self.assertEqual(BankTransferProof.objects.get().status, "CONFIRMED")
         r = self.api.post("/api/company/handover/check/", {"payload": ref}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         r = self.api.post(f"/api/company/orders/{ref}/", {"action": "handover"}, format="json")
