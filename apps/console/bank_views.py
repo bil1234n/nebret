@@ -12,6 +12,8 @@ Staff console – marketplace bank transfers and trust & safety:
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 from datetime import timedelta
 
 from django.contrib import messages
@@ -188,14 +190,23 @@ def listing_equb(request, pk):
 
     listing = get_object_or_404(Listing.objects.select_related("company"), pk=pk)
     preview = None
+    default_fee = EqubSettings.load().service_fee_percent
+    available = listing.units.filter(status="AVAILABLE")
+    price = max([u.price for u in available] or [listing.price])
     d = request.POST
     if request.method == "POST":
         start = parse_date(d.get("start_date", ""))
         try:
             if d.get("action") == "preview":
-                preview = product.maths(price=listing.price, contribution=d.get("contribution_amount") or 0,
-                                        duration_value=int(d.get("duration_value") or 0),
-                                        fee_percent=EqubSettings.load().service_fee_percent)
+                fee = d.get("service_fee_percent") or default_fee
+                try:
+                    fee = Decimal(str(fee))
+                except Exception as exc:  # noqa: BLE001
+                    raise BusinessRuleError("Enter the service fee as a percentage, e.g. 2.") from exc
+                args = dict(price=price, contribution=Decimal(d.get("contribution_amount") or 0),
+                            duration_value=int(d.get("duration_value") or 0), fee_percent=fee)
+                preview = product.maths(**args)
+                preview["suggestions"] = product.suggestions(**args)
             else:
                 if not start:
                     raise BusinessRuleError("Choose the start date.")
@@ -203,7 +214,8 @@ def listing_equb(request, pk):
                     listing, request.user, contribution_amount=d.get("contribution_amount") or 0,
                     duration_value=d.get("duration_value") or 0, duration_unit=d.get("duration_unit") or "DAYS",
                     members=d.get("members") or 0, start_date=start, rounds_drawn=d.get("rounds_drawn") or None,
-                    name=d.get("name", ""), terms=d.get("terms", ""), draw_type=d.get("draw_type") or "AUTOMATIC")
+                    name=d.get("name", ""), terms=d.get("terms", ""), draw_type=d.get("draw_type") or "AUTOMATIC",
+                    service_fee_percent=d.get("service_fee_percent") or None)
                 messages.success(request, f"“{group.name}” created – {m['explanation']}.")
                 return redirect("console:equb", slug=group.slug)
         except (BusinessRuleError, ValueError) as exc:
@@ -211,7 +223,7 @@ def listing_equb(request, pk):
     return render(request, "console/listing_equb.html", {
         "nav": "listings", "l": listing, "groups": EqubGroup.objects.filter(listing=listing).order_by("-created_at"),
         "units_available": listing.units.filter(status="AVAILABLE").count(), "preview": preview, "post": d,
-        "units": DurationUnit.choices, "fee": EqubSettings.load().service_fee_percent,
+        "units": DurationUnit.choices, "fee": default_fee, "price": price,
         "today": timezone.localdate()})
 
 

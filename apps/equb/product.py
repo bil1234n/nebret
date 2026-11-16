@@ -49,10 +49,58 @@ def maths(*, price, contribution, duration_value: int, fee_percent) -> dict:
     return {"contribution": str(Decimal(contribution).quantize(CENT)), "payments_per_member": duration_value,
             "paid_in_per_member": str(gross), "service_fee_percent": str(fee_percent), "service_fee": str(fee),
             "payout_per_winner": str(payout), "product_price": str(Decimal(price).quantize(CENT)),
-            "covers_price": payout >= Decimal(price),
+            "covers_price": payout >= Decimal(price), "exact": payout == Decimal(price).quantize(CENT),
+            "gap": str(abs(payout - Decimal(price).quantize(CENT))),
             "explanation": f"{Decimal(contribution):,.2f} × {duration_value} payments = {gross:,.2f} ETB − "
                            f"{fee_percent}% fee ({fee:,.2f}) = {payout:,.2f} ETB per winner "
                            f"{'≥' if payout >= Decimal(price) else '<'} product price {Decimal(price):,.2f} ETB"}
+
+
+def _ceil_cent(x: Decimal) -> Decimal:
+    return x.quantize(CENT, rounding="ROUND_CEILING")
+
+
+def suggestions(*, price, contribution, duration_value: int, fee_percent) -> list[dict]:
+    """
+    Ways to make each winner's payout match the product price exactly (or as close as whole cents allow).
+
+    Each suggestion keeps two of contribution / payments / fee and changes the third, and says what the payout
+    becomes. Used by "Show the maths" with a "Use this" button that fills the form.
+    """
+    price, fee = Decimal(price), Decimal(fee_percent)
+    try:
+        c, n = Decimal(contribution), int(duration_value)
+    except Exception:  # noqa: BLE001
+        c, n = Decimal(0), 0
+    keep = 1 - fee / 100
+    out: list[dict] = []
+
+    def add(title, values, contribution_, payments_, fee_):
+        m = maths(price=price, contribution=contribution_, duration_value=payments_, fee_percent=fee_)
+        diff = Decimal(m["payout_per_winner"]) - price
+        if diff < 0 or any(o["values"] == values for o in out):
+            return
+        import json
+
+        out.append({"title": title, "values": values, "values_json": json.dumps(values), "payout": m["payout_per_winner"], "difference": str(diff),
+                    "exact": diff == 0, "explanation": m["explanation"]})
+
+    if n >= 1 and keep > 0:
+        need = _ceil_cent(price / (n * keep))
+        add(f"Contribution {need:,.2f} ETB × {n} payments", {"contribution_amount": str(need)}, need, n, fee)
+        nice = (need / 100).to_integral_value(rounding="ROUND_CEILING") * 100
+        if nice != need:
+            add(f"Round contribution {nice:,.0f} ETB × {n} payments", {"contribution_amount": str(nice)},
+                nice, n, fee)
+    if c > 0 and keep > 0:
+        payments = int((price / (c * keep)).to_integral_value(rounding="ROUND_CEILING"))
+        add(f"{payments} payments of {c:,.2f} ETB", {"duration_value": str(payments)}, c, payments, fee)
+    if c > 0 and n >= 1 and c * n >= price:
+        exact_fee = ((1 - price / (c * n)) * 100).quantize(CENT, rounding="ROUND_FLOOR")
+        if 0 <= exact_fee <= 20 and exact_fee != fee:
+            add(f"Service fee {exact_fee}% with {c:,.2f} ETB × {n}", {"service_fee_percent": str(exact_fee)},
+                c, n, exact_fee)
+    return out
 
 
 def rules_text(listing, members: int, group_name: str) -> str:
@@ -70,7 +118,8 @@ def rules_text(listing, members: int, group_name: str) -> str:
 @transaction.atomic
 def create_product_equb(listing, user, *, contribution_amount, duration_value: int, duration_unit: str = "DAYS",
                         members: int, start_date: date, rounds_drawn: int | None = None, name: str = "",
-                        terms: str = "", draw_type: str = EqubGroup.DrawType.AUTOMATIC) -> tuple[EqubGroup, dict]:
+                        terms: str = "", draw_type: str = EqubGroup.DrawType.AUTOMATIC,
+                        service_fee_percent=None) -> tuple[EqubGroup, dict]:
     from apps.market.models import Listing, ListingUnit
 
     if not _can_create(user, listing):
@@ -85,6 +134,16 @@ def create_product_equb(listing, user, *, contribution_amount, duration_value: i
         raise BusinessRuleError("Enter the contribution, number of payments and members.") from exc
     if contribution <= 0 or duration_value < 1 or members < 2:
         raise BusinessRuleError("Contribution > 0, at least 1 payment and at least 2 members.")
+    fee_override = None
+    if service_fee_percent not in (None, ""):
+        if not getattr(user, "is_staff", False):
+            raise BusinessRuleError("Only Nebret staff can set the service fee.")
+        try:
+            fee_override = Decimal(str(service_fee_percent)).quantize(CENT)
+        except Exception as exc:  # noqa: BLE001
+            raise BusinessRuleError("Enter the service fee as a percentage, e.g. 2.") from exc
+        if not Decimal("0") <= fee_override <= Decimal("20"):
+            raise BusinessRuleError("The service fee must be between 0% and 20%.")
     if duration_unit not in DurationUnit.values:
         raise BusinessRuleError("Choose days, weeks or months.")
     if start_date < timezone.localdate():
@@ -98,7 +157,8 @@ def create_product_equb(listing, user, *, contribution_amount, duration_value: i
     group = EqubGroup(name=(name or f"{listing.title} Equb")[:120], contribution_amount=contribution,
                       duration_value=duration_value, duration_unit=duration_unit, max_members=members,
                       rounds_drawn=rounds_drawn or None, start_date=start_date, draw_type=draw_type,
-                      listing=listing, product_price=price, organizer=user, status=EqubGroup.Status.OPEN)
+                      listing=listing, product_price=price, organizer=user, status=EqubGroup.Status.OPEN,
+                      service_fee_override=fee_override)
     m = maths(price=price, contribution=contribution, duration_value=duration_value,
               fee_percent=group.service_fee_percent)
     if not m["covers_price"]:

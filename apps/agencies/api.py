@@ -175,6 +175,8 @@ def dashboard(request):
 class CompanyListingSerializer(serializers.ModelSerializer):
     category = serializers.SlugRelatedField(slug_field="slug", queryset=Category.objects.filter(is_active=True))
     units = serializers.IntegerField(write_only=True, required=False, min_value=0, max_value=500)
+    gallery = serializers.ListField(child=serializers.URLField(max_length=500), write_only=True, required=False,
+                                    max_length=15, help_text="Every photo link in order; the first is the cover.")
 
     class Meta:
         model = Listing
@@ -182,19 +184,75 @@ class CompanyListingSerializer(serializers.ModelSerializer):
                   "area", "address", "price", "compare_at_price", "image_url", "specs", "features",
                   "allow_full_payment", "allow_reservation", "reservation_fee", "reservation_days", "allow_installments",
                   "min_down_payment_percent", "max_installment_months", "delivery_available",
-                  "delivery_fee", "handover_days", "warranty_months", "units"]
+                  "delivery_fee", "handover_days", "warranty_months", "units", "gallery"]
 
     def validate(self, attrs):
         from django.core.exceptions import ValidationError as DjangoValidationError
 
-        data = {**{f: getattr(self.instance, f) for f in self.Meta.fields if self.instance and f != "units"}, **attrs}
+        data = {**{f: getattr(self.instance, f) for f in self.Meta.fields
+                   if self.instance and f not in ("units", "gallery")}, **attrs}
         data.pop("units", None)
+        data.pop("gallery", None)
         probe = Listing(**data)
         try:
             probe.clean()
         except DjangoValidationError as exc:
             raise serializers.ValidationError(getattr(exc, "message_dict", None) or exc.messages)
         return attrs
+
+
+def save_gallery(listing: Listing, urls: list[str] | None):
+    """Make the listing's photos exactly ``urls`` (in order). The first one is also the cover picture."""
+    from apps.market.models import ListingImage
+
+    if urls is None:
+        return
+    urls = list(dict.fromkeys(u for u in urls if u))
+
+    def url_of(img):
+        if img.image_url:
+            return img.image_url
+        try:
+            return img.image.url if img.image else ""
+        except ValueError:
+            return ""
+
+    have = {}
+    for img in listing.images.all():
+        u = url_of(img)
+        # uploaded files come back from the API as absolute links ("https://host/media/…")
+        match = u if u in urls else next((x for x in urls if u and not img.image_url and x.endswith(u)), None)
+        if match and match not in have:
+            have[match] = img
+        else:
+            img.delete()
+    for n, u in enumerate(urls):
+        if u in have:
+            if have[u].sort_order != n:
+                have[u].sort_order = n
+                have[u].save(update_fields=["sort_order"])
+        else:
+            ListingImage.objects.create(listing=listing, image_url=u, sort_order=n)
+    if urls and listing.image_url != urls[0]:
+        listing.image_url = urls[0]
+        listing.save(update_fields=["image_url", "updated_at"])
+
+
+@company_api(["POST"])
+def upload_photo(request):
+    """``POST multipart {file}`` → ``{url}``: one listing photo picked on the phone."""
+    from apps.market.uploads import UploadError, upload_image
+
+    _need_manager(request)
+    f = request.FILES.get("file")
+    if not f:
+        raise BusinessRuleError("Choose a photo.")
+    if not (getattr(f, "content_type", "") or "").startswith("image/"):
+        raise BusinessRuleError("Only photos (JPG or PNG) can be added.")
+    try:
+        return Response({"url": upload_image(f)}, status=201)
+    except UploadError as exc:
+        raise BusinessRuleError(str(exc)) from exc
 
 
 def _listing_detail(request, listing: Listing) -> dict:
@@ -215,6 +273,9 @@ def listings(request):
         s = CompanyListingSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         units = s.validated_data.pop("units", 1)
+        gallery = s.validated_data.pop("gallery", None)
+        if gallery and not s.validated_data.get("image_url"):
+            s.validated_data["image_url"] = gallery[0]
         listing = Listing(**s.validated_data, company=request.agency, created_by=request.user)
         from .bank_accounts import has_usable_account
 
@@ -223,6 +284,7 @@ def listings(request):
         listing.save()
         if units:
             listing.add_units(units)
+        save_gallery(listing, gallery)
         return Response(_listing_detail(request, _listings(request).get(pk=listing.pk)), status=201)
     qs = _listings(request)
     p = request.query_params
@@ -243,9 +305,11 @@ def listing(request, pk: int):
         s = CompanyListingSerializer(obj, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
         s.validated_data.pop("units", None)
+        gallery = s.validated_data.pop("gallery", None)
         for k, v in s.validated_data.items():
             setattr(obj, k, v)
         obj.save()
+        save_gallery(obj, gallery)
     elif request.method == "POST":
         _need_manager(request)
         d, action = request.data, request.data.get("action")

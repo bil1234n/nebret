@@ -2,23 +2,70 @@
 {% block title %}Product Equb · {{ l.title }}{% endblock %}{% block heading %}Win this with Equb{% endblock %}
 {% block crumbs %}<a href="{% url 'console:listing' l.pk %}">{{ l.title }}</a> · {{ l.price|money }} · {{ units_available }} unit{{ units_available|pluralize }} available{% endblock %}
 {% block content %}
-<form method="post" class="card" style="border:2px solid var(--gold)">{% csrf_token %}
+<form method="post" class="card" id="pe-form" style="border:2px solid var(--gold)">{% csrf_token %}
   <div class="card-h"><h2>New product Equb</h2><span>Every member wins once and receives the product. One unit per member is reserved now and the price is locked.</span></div>
   <div class="form-grid">
     <div class="field"><label>Name</label><input type="text" name="name" value="{{ post.name|default:'' }}" placeholder="{{ l.title }} Equb"></div>
-    <div class="field"><label>Contribution (ETB)</label><input type="number" step="0.01" name="contribution_amount" value="{{ post.contribution_amount|default:'' }}" required></div>
+    <div class="field"><label>Contribution (ETB)</label><input type="number" step="0.01" min="0" name="contribution_amount" value="{{ post.contribution_amount|default:'' }}" required></div>
     <div class="field"><label>Number of payments</label><input type="number" min="1" name="duration_value" value="{{ post.duration_value|default:'' }}" required></div>
     <div class="field"><label>Paid every</label><select name="duration_unit">{% for v, lab in units %}<option value="{{ v }}" {% if post.duration_unit == v %}selected{% endif %}>{{ lab }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Service fee (%)</label><input type="number" step="0.01" min="0" max="20" name="service_fee_percent" value="{{ post.service_fee_percent|default:fee }}" required>
+      <div class="help">Kept from each winner's payout. Default for all Equbs: {{ fee }}%.</div></div>
     <div class="field"><label>Members (= winners = units reserved)</label><input type="number" min="2" name="members" value="{{ post.members|default:'' }}" required></div>
     <div class="field"><label>Draws (empty = one per member)</label><input type="number" min="1" name="rounds_drawn" value="{{ post.rounds_drawn|default:'' }}"></div>
     <div class="field"><label>Start date</label><input type="date" name="start_date" value="{{ post.start_date|default:today|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}"></div>
-    <div class="field"><label>Draw</label><select name="draw_type"><option value="AUTOMATIC">Automatic fair draw</option><option value="MANUAL">Staff run the draw</option></select></div>
+    <div class="field"><label>Draw</label><select name="draw_type"><option value="AUTOMATIC">Automatic fair draw</option><option value="MANUAL" {% if post.draw_type == "MANUAL" %}selected{% endif %}>Staff run the draw</option></select></div>
     <div class="field wide"><label>Extra terms (shown before joining)</label><textarea name="terms" rows="3">{{ post.terms|default:'' }}</textarea></div>
   </div>
-  {% if preview %}<div class="msg {% if preview.covers_price %}success{% else %}error{% endif %}">{{ preview.explanation }}</div>{% endif %}
-  <p class="small muted">Service fee {{ fee }}%. Each winner's payout (contribution × payments − fee) must be at least the product price.</p>
-  <button class="btn ghost" name="action" value="preview">Show the maths</button> <button class="btn" name="action" value="create">Create product Equb</button>
+
+  {% if preview %}
+  <div class="pe-result {% if preview.covers_price %}ok{% else %}bad{% endif %}">
+    <div class="pe-result-h">{% if preview.covers_price %}✓ Each winner's payout covers the product price{% else %}✕ Each winner's payout is below the product price{% endif %}</div>
+    <table class="pe-table"><tbody>
+      <tr><td>Contribution × payments</td><td class="num">{{ preview.contribution|money }} × {{ preview.payments_per_member }}</td></tr>
+      <tr><td>Paid in by each member</td><td class="num">{{ preview.paid_in_per_member|money }}</td></tr>
+      <tr><td>Service fee ({{ preview.service_fee_percent }}%)</td><td class="num">− {{ preview.service_fee|money }}</td></tr>
+      <tr class="strong"><td>Payout per winner</td><td class="num">{{ preview.payout_per_winner|money }}</td></tr>
+      <tr><td>Product price (locked)</td><td class="num">{{ preview.product_price|money }}</td></tr>
+      <tr class="strong"><td>{% if preview.covers_price %}Extra paid out to the winner{% else %}Short by{% endif %}</td><td class="num">{{ preview.gap|money }}</td></tr>
+    </tbody></table>
+    {% if preview.exact %}<p class="small" style="margin:10px 0 0">The payout matches the product price exactly.</p>{% endif %}
+  </div>
+  {% if preview.suggestions and not preview.exact %}
+  <div class="pe-sugg">
+    <div class="pe-sugg-h">Suggestions to match the product price {{ preview.product_price|money }}</div>
+    {% for sg in preview.suggestions %}
+    <div class="pe-sugg-row">
+      <div><div class="strong">{{ sg.title }}</div>
+        <div class="small muted">Payout {{ sg.payout|money }} · {% if sg.exact %}<span class="badge b-green">Exact</span>{% else %}{{ sg.difference|money }} over (paid out to the winner){% endif %}</div></div>
+      <button type="button" class="btn sm" data-use='{{ sg.values_json }}'>Use this</button>
+    </div>
+    {% endfor %}
+  </div>{% endif %}
+  {% endif %}
+
+  <div class="form-actions" style="margin-top:16px"><button class="btn ghost" name="action" value="preview" formnovalidate>Show the maths</button> <button class="btn" name="action" value="create">Create product Equb</button></div>
 </form>
+<style>
+  .pe-result{margin-top:16px;border-radius:12px;padding:16px 18px;border:1px solid var(--line)}
+  .pe-result.ok{background:#EEF8F2;border-color:#BFE3CD}.pe-result.bad{background:#FDF0EE;border-color:#F3C9C2}
+  .pe-result-h{font-weight:700;margin-bottom:10px}.pe-result.ok .pe-result-h{color:#14653D}.pe-result.bad .pe-result-h{color:#B3261E}
+  .pe-table{width:100%;max-width:560px;border-collapse:collapse}.pe-table td{padding:6px 0;border-bottom:1px dashed rgba(0,0,0,.08)}
+  .pe-table td.num{text-align:right;font-variant-numeric:tabular-nums}.pe-table tr.strong td{font-weight:700}
+  .pe-sugg{margin-top:14px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .pe-sugg-h{padding:12px 18px;font-weight:700;background:rgba(0,0,0,.03)}
+  .pe-sugg-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid var(--line)}
+</style>
+<script>
+document.querySelectorAll('#pe-form [data-use]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var form = document.getElementById('pe-form'), vals = JSON.parse(b.dataset.use);
+    Object.keys(vals).forEach(function (k) { var el = form.elements[k]; if (el) el.value = vals[k]; });
+    var go = document.createElement('input'); go.type = 'hidden'; go.name = 'action'; go.value = 'preview';
+    form.appendChild(go); form.noValidate = true; form.submit();
+  });
+});
+</script>
 <div class="card mt"><div class="card-h"><h2>Product Equbs for this listing</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Status</th><th class="r">Contribution</th><th class="r">Members</th><th>Starts</th></tr></thead><tbody>
 {% for g in groups %}<tr><td><a href="{% url 'console:equb' g.slug %}">{{ g.name }}</a></td><td>{{ g.status|status_badge:g.get_status_display }}</td><td class="r num">{{ g.contribution_amount|money }} {{ g.every }}</td><td class="r num">{{ g.members_count }} / {{ g.max_members }}</td><td class="small">{{ g.start_date|date:"d M Y" }}</td></tr>
 {% empty %}<tr><td colspan="5" class="empty">None yet.</td></tr>{% endfor %}</tbody></table></div></div>
