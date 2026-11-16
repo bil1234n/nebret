@@ -55,20 +55,14 @@ def account_for_order(agency: Agency, currency: str = "ETB") -> PartnerBankAccou
     return usable_accounts(agency, currency).order_by("-verified_at").first()
 
 
-@transaction.atomic
-def submit_account(agency: Agency, user, *, bank: str, account_name: str, account_number: str, currency: str = "ETB",
-                   swift_code: str = "", branch: str = "", replaces: PartnerBankAccount | None = None,
-                   ) -> PartnerBankAccount:
-    member = agency.staff.filter(user=user, is_active=True).first()
-    if not member or member.role != AgencyStaff.Role.OWNER:
-        raise BusinessRuleError("Only the company owner can add or change the bank account.")
+def _clean(bank, account_name, account_number, currency, swift_code, branch) -> dict:
     bank = (bank or "").upper()
     if bank not in Bank.values:
         raise BusinessRuleError("Choose one of the supported banks: " + ", ".join(Bank.labels) + ".")
     currency = (currency or "ETB").upper()
     if currency not in Currency.values:
         raise BusinessRuleError("Choose ETB, USD or EUR.")
-    number = "".join(ch for ch in str(account_number) if ch.isdigit())
+    number = "".join(ch for ch in str(account_number or "") if ch.isdigit())
     if not 8 <= len(number) <= 20:
         raise BusinessRuleError("Enter the full account number (8–20 digits).")
     if len((account_name or "").strip()) < 3:
@@ -76,16 +70,54 @@ def submit_account(agency: Agency, user, *, bank: str, account_name: str, accoun
     swift = (swift_code or "").strip().upper()
     if currency != "ETB" and len(swift) not in (8, 11):
         raise BusinessRuleError("USD and EUR accounts need the bank's SWIFT code (8 or 11 characters).")
+    return {"bank": bank, "account_name": account_name.strip()[:120], "account_number": number,
+            "currency": currency, "swift_code": swift, "branch": (branch or "").strip()[:80]}
+
+
+@transaction.atomic
+def submit_account(agency: Agency, user, *, bank: str, account_name: str, account_number: str, currency: str = "ETB",
+                   swift_code: str = "", branch: str = "", replaces: PartnerBankAccount | None = None,
+                   ) -> PartnerBankAccount:
+    member = agency.staff.filter(user=user, is_active=True).first()
+    if not member or member.role != AgencyStaff.Role.OWNER:
+        raise BusinessRuleError("Only the company owner can add or change the bank account.")
+    data = _clean(bank, account_name, account_number, currency, swift_code, branch)
     if replaces and replaces.agency_id != agency.id:
         raise BusinessRuleError("That account belongs to another company.")
-    acc = PartnerBankAccount.objects.create(
-        agency=agency, bank=bank, account_name=account_name.strip()[:120], account_number=number, currency=currency,
-        swift_code=swift, branch=(branch or "").strip()[:80], replaces=replaces, created_by=user)
-    _event(acc, "SUBMITTED", user, replaces=replaces.pk if replaces else None, bank=bank,
-           number=acc.masked_number, currency=currency)
+    acc = PartnerBankAccount.objects.create(agency=agency, replaces=replaces, created_by=user, **data)
+    _event(acc, "SUBMITTED", user, replaces=replaces.pk if replaces else None, bank=acc.bank,
+           number=acc.masked_number, currency=acc.currency)
     _notify_change(acc, "Bank account submitted",
-                   f"{agency.name}: new {bank} account {acc.masked_number} "
-                   f"({currency}) was submitted by {user.full_name} and is waiting for Nebret approval.")
+                   f"{agency.name}: new {acc.bank} account {acc.masked_number} "
+                   f"({acc.currency}) was submitted by {user.full_name} and is waiting for Nebret approval.")
+    return acc
+
+
+@transaction.atomic
+def add_account_by_staff(agency: Agency, staff, *, bank: str, account_name: str, account_number: str,
+                         currency: str = "ETB", swift_code: str = "", branch: str = "", note: str = "",
+                         ) -> PartnerBankAccount:
+    """
+    Nebret staff enter the account from the company's signed documents (e.g. when creating the company).
+
+    Recorded and approved in one step. A company's FIRST account is usable at once – there is nothing to redirect
+    yet. A change to an existing account replaces the newest one in that currency and still waits out the
+    cooling-off period, exactly like an owner's change.
+    """
+    if not getattr(staff, "is_staff", False):
+        raise BusinessRuleError("Only Nebret staff can add a bank account for a company.")
+    data = _clean(bank, account_name, account_number, currency, swift_code, branch)
+    current = (agency.bank_accounts.select_for_update().filter(status=A.APPROVED, currency=data["currency"])
+               .order_by("-verified_at").first())
+    if current and current.account_number == data["account_number"] and current.bank == data["bank"]:
+        return current
+    acc = PartnerBankAccount.objects.create(agency=agency, replaces=current, created_by=staff, **data)
+    _event(acc, "SUBMITTED", staff, note or "Entered by Nebret staff", replaces=current.pk if current else None,
+           bank=acc.bank, number=acc.masked_number, currency=acc.currency)
+    approve_account(acc, staff, note or "Entered by Nebret staff from the company's documents")
+    if not agency.bank_accounts.filter(status=A.APPROVED).exclude(pk=acc.pk).exists():
+        PartnerBankAccount.objects.filter(pk=acc.pk).update(usable_from=timezone.now())
+    acc.refresh_from_db()
     return acc
 
 

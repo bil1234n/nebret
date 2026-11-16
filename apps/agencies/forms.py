@@ -16,7 +16,13 @@ from .models import Agency, AgencyStaff, FamilyMember
 
 
 class AgencyForm(StyledMixin, forms.ModelForm):
-    """Console: create / edit a partner company. On create, the owner's account is set up too."""
+    """
+    Console: create / edit a partner company. On create, the owner's account is set up too.
+
+    The bank account entered here is the one buyers pay into (bank transfer, verified with ShegerPay and confirmed by
+    the company). It is saved as an approved :class:`PartnerBankAccount`; on edit, filling it in replaces the current
+    account after the cooling-off period.
+    """
 
     owner_name = forms.CharField(label="Owner full name", max_length=150, required=False)
     owner_phone = forms.CharField(label="Owner phone", max_length=20, required=False,
@@ -24,7 +30,17 @@ class AgencyForm(StyledMixin, forms.ModelForm):
     owner_password = forms.CharField(label="Owner PIN (6 digits)", required=False, min_length=6, max_length=6,
                                      widget=forms.TextInput(attrs={"inputmode": "numeric", "maxlength": 6, "pattern": "[0-9]{6}", "autocomplete": "off"}),
                                      help_text="The owner signs in to the app and the company portal with their phone and this PIN.")
-    bank_code = forms.TypedChoiceField(label="Bank", coerce=int, required=False, empty_value=None)
+    pay_bank = forms.ChoiceField(label="Bank", required=False)
+    pay_account_name = forms.CharField(label="Account holder name", max_length=120, required=False,
+                                       help_text="Exactly as the bank shows it – buyers see this name before they pay.")
+    pay_account_number = forms.CharField(label="Account number", max_length=40, required=False,
+                                         widget=forms.TextInput(attrs={"inputmode": "numeric", "autocomplete": "off"}))
+    pay_currency = forms.ChoiceField(label="Currency", required=False, initial="ETB")
+    pay_swift = forms.CharField(label="SWIFT code", max_length=11, required=False,
+                                help_text="Only for USD / EUR accounts.")
+    pay_branch = forms.CharField(label="Branch", max_length=80, required=False)
+
+    PAY_FIELDS = ["pay_bank", "pay_account_name", "pay_account_number", "pay_currency", "pay_swift", "pay_branch"]
 
     sections = [
         ("Company", "", ["name", "kind", "license_number", "tin", "phone", "email", "website", "city", "address"]),
@@ -32,49 +48,82 @@ class AgencyForm(StyledMixin, forms.ModelForm):
          ["description", "logo_url", "is_verified"]),
         ("Owner account", "The person who runs the company account. They can add their own sales team later.",
          ["owner_name", "owner_phone", "owner_password"]),
-        ("Commission & status", "Nebret's commission is taken from every sale the company makes.",
-         ["commission_percent", "status"]),
-        ("Payout bank account", "Chapa sends the company's share of every sale here automatically, once the Chapa "
-                                "subaccount is created on the company's page.",
-         ["bank_code", "account_name", "account_number"]),
+        ("Commission & status", "", ["commission_percent", "status"]),
+        ("Bank account – customers pay here", "", PAY_FIELDS),
         ("Internal", "", ["notes"]),
     ]
 
     class Meta:
         model = Agency
         fields = ["name", "kind", "license_number", "tin", "phone", "email", "website", "city", "address",
-                  "description", "logo_url", "is_verified", "commission_percent", "status", "bank_code",
-                  "account_name", "account_number", "notes"]
-        labels = {"commission_percent": "Nebret commission (%)", "account_name": "Account holder name",
-                  "is_verified": "Verified seller"}
+                  "description", "logo_url", "is_verified", "commission_percent", "status", "notes"]
+        labels = {"commission_percent": "Nebret commission (%)", "is_verified": "Verified seller"}
         widgets = {"description": forms.Textarea(attrs={"rows": 3})}
 
-    def __init__(self, *args, banks=None, **kwargs):
+    def __init__(self, *args, banks=None, **kwargs):  # ``banks`` kept for old callers; Chapa's list is not used
+        from apps.payments.banks import Bank, Currency, commission_account
+
         super().__init__(*args, **kwargs)
-        self.banks = {b["id"]: b["name"] for b in (banks or [])}
-        choices = [("", "— choose the bank —")] + [(b["id"], b["name"]) for b in (banks or [])]
-        if self.instance.bank_code and self.instance.bank_code not in self.banks:
-            choices.append((self.instance.bank_code, self.instance.bank_name or f"Bank #{self.instance.bank_code}"))
-        self.fields["bank_code"].choices = choices
-        if not banks:
-            self.fields["bank_code"].help_text = "Chapa's bank list couldn't be loaded – check the Chapa keys."
+        self.fields["pay_bank"].choices = [("", "— choose the bank —")] + list(Bank.choices)
+        self.fields["pay_currency"].choices = list(Currency.choices)
+        self.current_account = None
+        house = commission_account()
+        to = (f"{house['bank_name']} · {house.get('account_name') or 'Nebret Equb'} · {house['account_number']}"
+              if house else "Nebret's commission account (not set yet – set COMMISSION_ACCOUNT_NUMBER on the server)")
+        commission_help = (f"Nebret's commission is taken from every sale. Buyers pay the company directly, and the "
+                           f"company transfers the commission to {to}.")
+        pay_help = ("Buyers transfer straight into this account. Nebret checks every receipt with ShegerPay, the "
+                    "company confirms it, and the payment is done – Nebret never holds the money. Supported banks: "
+                    + ", ".join(Bank.labels) + ".")
         if self.instance.pk:
             for n in ("owner_name", "owner_phone", "owner_password"):
                 self.fields.pop(n)
-            self.sections = [s for s in self.sections if s[0] != "Owner account"]
-            if self.instance.chapa_subaccount_id:
-                self.disable("bank_code", "account_name", "account_number",
-                             reason="Linked to Chapa. To change it, remove the subaccount in Chapa first.")
+            from apps.agencies.models import PartnerBankAccount
+
+            self.current_account = (self.instance.bank_accounts.filter(status=PartnerBankAccount.Status.APPROVED)
+                                    .order_by("-verified_at").first())
+            if self.current_account:
+                c = self.current_account
+                pay_help += (f" Current account: {dict(Bank.choices).get(c.bank, c.bank)}"
+                             f" · {c.account_name} · {c.account_number} ({c.currency}). Fill these in only to "
+                             f"replace it – the new account is used after the cooling-off period.")
+            else:
+                pay_help += " This company has no approved account yet, so its listings can't take orders."
         else:
             self.fields["owner_name"].required = self.fields["owner_phone"].required = True
+            for n in ("pay_bank", "pay_account_name", "pay_account_number"):
+                self.fields[n].required = True
+        self.sections = [
+            (t, commission_help if t.startswith("Commission") else pay_help if t.startswith("Bank account") else h, f)
+            for t, h, f in self.sections if not (self.instance.pk and t == "Owner account")]
 
-    def save(self, commit=True):
-        obj = super().save(commit=False)
-        if obj.bank_code:
-            obj.bank_name = self.banks.get(obj.bank_code, obj.bank_name)
-        if commit:
-            obj.save()
-        return obj
+    def clean(self):
+        from apps.core.exceptions import BusinessRuleError
+
+        from .bank_accounts import _clean
+
+        d = super().clean()
+        given = any(d.get(n) for n in ("pay_bank", "pay_account_name", "pay_account_number"))
+        self.bank_details = None
+        if given or not self.instance.pk:
+            try:
+                self.bank_details = _clean(d.get("pay_bank"), d.get("pay_account_name"),
+                                           d.get("pay_account_number"), d.get("pay_currency") or "ETB",
+                                           d.get("pay_swift"), d.get("pay_branch"))
+            except BusinessRuleError as exc:
+                msg = str(exc.detail)
+                field = ("pay_account_number" if "number" in msg else "pay_account_name" if "name" in msg
+                         else "pay_swift" if "SWIFT" in msg else "pay_currency" if "ETB" in msg else "pay_bank")
+                self.add_error(field, msg)
+        return d
+
+    def save_bank_account(self, agency, staff):
+        """Record the entered account (approved by the staff member saving the form)."""
+        from .bank_accounts import add_account_by_staff
+
+        if not self.bank_details:
+            return None
+        return add_account_by_staff(agency, staff, **self.bank_details)
 
 
 class CompanyProfileForm(StyledMixin, forms.ModelForm):

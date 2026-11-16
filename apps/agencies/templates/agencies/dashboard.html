@@ -17,7 +17,8 @@
   <a class="card kpi" href="{% url 'agency:customers' %}"><div class="label">Customers</div><div class="value">{{ counts.customers }}</div><div class="sub">signed up by your team</div></a>
 </div>
 
-{% if not agency.chapa_subaccount_id %}<div class="note-box mt">Your bank account is not linked to Chapa yet, so your share of each sale is collected by Nebret Equb and paid out to you. Once it is linked, Chapa sends your share straight to your bank at every payment. <a href="{% url 'agency:profile' %}">See your payout details →</a></div>{% endif %}
+{% if not pay_account %}<div class="note-box mt">You don't have an approved bank account yet, so buyers can't pay and your listings can't go live. Nebret adds it from your company documents, or the owner can submit it in the app. <a href="{% url 'agency:profile' %}">See your payment details →</a></div>
+{% elif total.receivable %}<div class="note-box mt">You owe Nebret <strong>{{ total.receivable|money }} ETB</strong> commission on payments buyers sent to your account.{% if commission_account %} Please transfer it to {{ commission_account.bank_name }} · {{ commission_account.account_name|default:"Nebret Equb" }} · <span class="mono">{{ commission_account.account_number }}</span>.{% endif %} <a href="{% url 'agency:earnings' %}">See details →</a></div>{% endif %}
 
 <div class="grid g-2 mt">
   <div class="card"><div class="card-h"><h2>Waiting for first payment</h2><a class="small" href="{% url 'agency:orders' %}?status=PENDING_PAYMENT">All →</a></div>

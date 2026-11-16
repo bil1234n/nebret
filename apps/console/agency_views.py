@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.db import transaction
+from django.utils import timezone
 from django.db.models import Count, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -11,6 +12,7 @@ from apps.agencies import services as ag
 from apps.agencies.forms import AgencyForm, StaffForm
 from apps.agencies.models import Agency, AgencyLedgerEntry
 from apps.core.exceptions import BusinessRuleError
+from apps.payments.banks import Bank, commission_account
 
 from .views import page, staff_required
 
@@ -23,6 +25,7 @@ def agencies(request):
     kind = request.GET.get("kind", "")
     qs = Agency.objects.annotate(
         n_customers=Count("customers", distinct=True),
+        n_accounts=Count("bank_accounts", filter=Q(bank_accounts__status="APPROVED"), distinct=True),
         n_listings=Count("listings", filter=Q(listings__status="ACTIVE"), distinct=True),
         sales=Sum("ledger__gross_amount", filter=~Q(ledger__payout_status=Payout.REVERSED)),
         commission=Sum("ledger__commission", filter=~Q(ledger__payout_status=Payout.REVERSED)),
@@ -46,12 +49,20 @@ def agencies(request):
 @staff_required
 def agency_form(request, pk=None):
     obj = get_object_or_404(Agency, pk=pk) if pk else None
-    form = AgencyForm(request.POST or None, instance=obj, banks=ag.chapa_banks())
+    form = AgencyForm(request.POST or None, instance=obj)
     if request.method == "POST" and form.is_valid():
         if obj:
-            form.save()
-            messages.success(request, "Company saved.")
-            return redirect("console:agency", pk=obj.pk)
+            try:
+                with transaction.atomic():
+                    form.save()
+                    acc = form.save_bank_account(obj, request.user)
+            except BusinessRuleError as exc:
+                form.add_error(None, str(exc.detail))
+            else:
+                messages.success(request, "Company saved." + (
+                    f" New bank account {acc.masked_number} is used for new orders from "
+                    f"{timezone.localtime(acc.usable_from):%d %b %Y %H:%M}." if acc else ""))
+                return redirect("console:agency", pk=obj.pk)
         d = form.cleaned_data
         try:
             with transaction.atomic():
@@ -60,6 +71,7 @@ def agency_form(request, pk=None):
                 agency.save()
                 ag.add_staff(agency, full_name=d["owner_name"], phone=d["owner_phone"],
                              password=d["owner_password"], role="OWNER")
+                form.save_bank_account(agency, request.user)
         except BusinessRuleError as exc:
             form.instance.pk = None
             form.add_error(None, str(exc.detail))
@@ -124,4 +136,6 @@ def agency_detail(request, pk):
         "listings": a.listings.select_related("category").order_by("-created_at")[:15],
         "orders": a.orders.select_related("user", "listing").order_by("-created_at")[:15],
         "staff": a.staff.select_related("user"), "customers": a.customers.select_related("user")[:15],
-        "n_customers": a.customers.count(), "equb_cash": _equb_cash(a), "staff_form": StaffForm(), "statuses": Agency.Status.choices})
+        "n_customers": a.customers.count(), "equb_cash": _equb_cash(a), "staff_form": StaffForm(), "statuses": Agency.Status.choices,
+        "bank_accounts": a.bank_accounts.exclude(status="RETIRED").order_by("-created_at")[:5],
+        "commission_account": commission_account(), "banks": dict(Bank.choices)})

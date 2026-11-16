@@ -670,6 +670,12 @@ def earnings(request):
     cash = company_equb_cash(a)
     resp.data["summary"] = _summary(services.summary(a))
     resp.data["equb_cash"] = {"total": str(cash["total"]), "count": cash["count"]}
+    from apps.payments.banks import commission_account
+
+    acc = commission_account()
+    # Where the company sends Nebret's commission (buyers pay the company directly).
+    resp.data["commission_account"] = ({k: acc.get(k, "") for k in ("bank", "bank_name", "account_name",
+                                                                     "account_number", "branch")} if acc else None)
     return resp
 
 

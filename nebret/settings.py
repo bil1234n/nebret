@@ -286,6 +286,12 @@ NEBRET = {
                             "account_number": env("HOUSE_ACCOUNT_NUMBER", ""), "currency": "ETB",
                             "branch": env("HOUSE_BRANCH", ""), "swift_code": env("HOUSE_SWIFT", "")}
                            if env("HOUSE_ACCOUNT_NUMBER") else {}),
+    # Nebret's account partner companies transfer the commission into (falls back to HOUSE_BANK_ACCOUNT).
+    "COMMISSION_BANK_ACCOUNT": ({"bank": env("COMMISSION_BANK", "CBE"),
+                                 "account_name": env("COMMISSION_ACCOUNT_NAME", ""),
+                                 "account_number": env("COMMISSION_ACCOUNT_NUMBER", ""), "currency": "ETB",
+                                 "branch": env("COMMISSION_BRANCH", ""), "swift_code": env("COMMISSION_SWIFT", "")}
+                                if env("COMMISSION_ACCOUNT_NUMBER") else {}),
     # The only phone number customers ever see. Set SUPPORT_PHONE in the server environment.
     "SUPPORT_PHONE": env("SUPPORT_PHONE", "+251 900 000 000"),
     # Public holidays skipped by business-day maths (Sat/Sun are always skipped). Movable feasts (Fasika, Eid,

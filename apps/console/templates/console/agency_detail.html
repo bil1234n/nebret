@@ -11,16 +11,19 @@
 </div>
 
 <div class="grid g-2 mt">
-  <div class="card"><div class="card-h"><h2>Chapa payout (split payment)</h2>{% if a.chapa_subaccount_id %}<span class="badge b-green">Linked</span>{% else %}<span class="badge b-grey">Not linked</span>{% endif %}</div>
-    <dl class="kv"><dt>Bank</dt><dd>{{ a.bank_name|default:"—" }}</dd><dt>Account holder</dt><dd>{{ a.account_name|default:"—" }}</dd>
-      <dt>Account number</dt><dd class="mono">{{ a.account_number|default:"—" }}</dd>
-      <dt>Subaccount</dt><dd class="mono small">{{ a.chapa_subaccount_id|default:"—" }}</dd></dl>
-    {% if not a.chapa_subaccount_id %}
-      {% if a.bank_code and a.account_number and a.account_name %}
-      <form method="post" style="margin-top:12px" data-confirm="Register {{ a.account_name }} · {{ a.account_number }} with Chapa? Chapa will then send {{ a.name }} its share of every online sale automatically.">{% csrf_token %}<input type="hidden" name="action" value="subaccount"><button class="btn">Create Chapa subaccount</button></form>
-      {% else %}<p class="small muted">Add the company's bank, account holder and account number (<a href="{% url 'console:agency_edit' a.pk %}">Edit</a>), then create the subaccount.</p>{% endif %}
-      <p class="small muted" style="margin-bottom:0">Until it is linked, online sales come fully to Nebret and the company's share shows as owed below.</p>
-    {% else %}<p class="small muted" style="margin-bottom:0">On every online sale Chapa keeps {{ a.commission_percent|floatformat:"-2" }}% for Nebret and settles the rest to this account.</p>{% endif %}
+  <div class="card"><div class="card-h"><h2>Bank account – customers pay here</h2>{% if bank_accounts %}<a class="small" href="{% url 'console:agency_edit' a.pk %}">Change</a>{% else %}<span class="badge b-red">Missing</span>{% endif %}</div>
+    {% for acc in bank_accounts %}
+    <dl class="kv"{% if not forloop.first %} style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"{% endif %}>
+      <dt>Bank</dt><dd>{{ banks|get_item:acc.bank|default:acc.bank }} {% if acc.is_usable %}<span class="badge b-green">In use</span>{% else %}{{ acc.status|status_badge:acc.get_status_display }}{% if acc.status == "APPROVED" and acc.usable_from %} <span class="small muted">from {{ acc.usable_from|date:"d M H:i" }}</span>{% endif %}{% endif %}</dd>
+      <dt>Account holder</dt><dd>{{ acc.account_name }}</dd>
+      <dt>Account number</dt><dd class="mono">{{ acc.account_number }} · {{ acc.currency }}</dd></dl>
+    {% empty %}
+    <p class="small muted">No bank account yet, so this company's listings can't be published or take orders. <a href="{% url 'console:agency_edit' a.pk %}">Add it</a>.</p>
+    {% endfor %}
+    <p class="small muted" style="margin:12px 0 0">Buyers transfer straight into this account. Nebret checks each receipt with ShegerPay and {{ a.name }} confirms it. <a href="{% url 'console:bank_accounts' %}?status=">All bank accounts →</a></p>
+    <div class="note-box" style="margin-top:12px"><strong>Commission ({{ a.commission_percent|floatformat:"-2" }}%)</strong> – {{ a.name }} transfers it to
+      {% if commission_account %}{{ commission_account.bank_name }} · {{ commission_account.account_name|default:"Nebret Equb" }} · <span class="mono">{{ commission_account.account_number }}</span>{% else %}Nebret's commission account (<em>not set – add COMMISSION_ACCOUNT_NUMBER on the server</em>){% endif %}.
+      <a href="{% url 'console:commission' %}?company={{ a.pk }}">Commission due →</a></div>
   </div>
   <div class="card"><div class="card-h"><h2>Company</h2>{{ a.status|status_badge:a.get_status_display }}</div>
     <dl class="kv"><dt>Business</dt><dd>{{ a.get_kind_display }}{% if a.is_verified %} <span class="badge b-green">Verified</span>{% endif %}</dd>

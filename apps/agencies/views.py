@@ -73,6 +73,17 @@ def _ctx(request, nav, **extra):
     return {"nav": nav, "agency": request.agency, "me": request.agency_staff, **extra}
 
 
+def _payment_accounts(agency) -> dict:
+    """The account buyers pay into and Nebret's account the company sends the commission to."""
+    from apps.payments.banks import Bank, commission_account
+
+    from .bank_accounts import account_for_order
+
+    acc = account_for_order(agency)
+    return {"pay_account": acc.snapshot() if acc else None, "commission_account": commission_account(),
+            "bank_names": dict(Bank.choices)}
+
+
 def _customer(request, pk) -> AgencyCustomer:
     return get_object_or_404(AgencyCustomer.objects.select_related("user"), pk=pk, agency=request.agency)
 
@@ -93,7 +104,7 @@ def dashboard(request):
     orders = _orders(request)
     listings = _listings(request)
     return render(request, "agencies/dashboard.html", _ctx(
-        request, "dashboard", month=services.summary(a, since=since), total=services.summary(a),
+        request, "dashboard", **_payment_accounts(a), month=services.summary(a, since=since), total=services.summary(a),
         recent=a.ledger.select_related("customer", "order").order_by("-created_at")[:8],
         pending=orders.filter(status=Order.Status.PENDING_PAYMENT).order_by("expires_at")[:6],
         handovers=orders.filter(status=Order.Status.PAID).order_by("handover_due")[:6],
@@ -498,7 +509,7 @@ def earnings(request):
     if status:
         qs = qs.filter(payout_status=status)
     return render(request, "agencies/earnings.html", _ctx(
-        request, "earnings", page=_page(request, qs), total=services.summary(a), payout=status,
+        request, "earnings", **_payment_accounts(a), page=_page(request, qs), total=services.summary(a), payout=status,
         payouts=AgencyLedgerEntry.Payout.choices))
 
 
@@ -540,7 +551,8 @@ def profile(request):
             form.save()
             messages.success(request, "Company profile saved.")
             return redirect("agency:profile")
-    return render(request, "agencies/profile.html", _ctx(request, "profile", form=form))
+    return render(request, "agencies/profile.html", _ctx(request, "profile", form=form,
+                                                         **_payment_accounts(request.agency)))
 
 
 @require_POST

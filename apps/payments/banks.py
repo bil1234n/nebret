@@ -41,3 +41,13 @@ SHEGERPAY_PROVIDER = {"CBE": "cbe", "BOA": "boa", "AWASH": "awash", "DASHEN": "d
 
 def auto_verifiable(channel: str, currency: str = "ETB") -> bool:
     return channel in SHEGERPAY_PROVIDER and currency == "ETB"
+
+
+def commission_account() -> dict:
+    """Nebret's bank account that partner companies transfer the commission into ({} when not configured)."""
+    from django.conf import settings
+
+    acc = settings.NEBRET.get("COMMISSION_BANK_ACCOUNT") or settings.NEBRET.get("HOUSE_BANK_ACCOUNT") or {}
+    if not acc.get("account_number"):
+        return {}
+    return {**acc, "bank_name": dict(Bank.choices).get(acc.get("bank"), acc.get("bank"))}

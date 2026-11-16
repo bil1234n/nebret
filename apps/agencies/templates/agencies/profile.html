@@ -8,9 +8,9 @@
       <dt>Address</dt><dd>{% if agency.address %}{{ agency.address }}, {% endif %}{{ agency.city|default:"—" }}</dd><dt>Licence</dt><dd>{{ agency.license_number|default:"—" }}</dd><dt>TIN</dt><dd>{{ agency.tin|default:"—" }}</dd></dl></div>
   <div class="card"><div class="card-h"><h2>How you get paid</h2></div>
     <dl class="kv"><dt>Platform fee</dt><dd>{{ agency.commission_percent|floatformat:"-2" }}% of every payment on your listings</dd>
-      <dt>Payout bank</dt><dd>{% if agency.account_number %}{{ agency.bank_name }} · {{ agency.account_name }} · {{ agency.account_number }}{% else %}Not set{% endif %}</dd>
-      <dt>Chapa split</dt><dd>{% if agency.chapa_subaccount_id %}<span class="badge b-green">On – Chapa pays your share at every payment</span>{% else %}<span class="badge b-grey">Off – Nebret Equb pays you out</span>{% endif %}</dd></dl>
-    <p class="small muted" style="margin-bottom:0">To change your bank details or commission, contact Nebret Equb.</p></div>
+      <dt>Buyers pay into</dt><dd>{% if pay_account %}{{ pay_account.bank_name }} · {{ pay_account.account_name }} · <span class="mono">{{ pay_account.account_number }}</span>{% else %}<span class="badge b-red">No approved account yet</span>{% endif %}</dd>
+      <dt>Commission goes to</dt><dd>{% if commission_account %}{{ commission_account.bank_name }} · {{ commission_account.account_name|default:"Nebret Equb" }} · <span class="mono">{{ commission_account.account_number }}</span>{% else %}Nebret will send you its account details{% endif %}</dd></dl>
+    <p class="small muted" style="margin-bottom:0">Buyers transfer straight to your bank. Nebret checks every receipt and you confirm it in the portal or the app; then you transfer Nebret's commission. Only the owner can change the bank account (in the app), and Nebret approves every change.</p></div>
 </div>
 {% if me.can_manage %}
 <form method="post" class="form-page mt" novalidate>{% csrf_token %}
