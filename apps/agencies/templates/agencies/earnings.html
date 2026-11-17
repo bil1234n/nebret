@@ -8,6 +8,21 @@
   <div class="card kpi gold"><div class="label">Still owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">Nebret pays this out{% if total.receivable %} · you owe Nebret {{ total.receivable|compact }} ETB commission on payments you received directly{% endif %}</div></div>
 </div>
 <div class="note-box mt">Buyers pay {% if pay_account %}straight into {{ pay_account.bank_name }} ({{ pay_account.account_number }}){% else %}straight into your bank account{% endif %}. You then transfer Nebret's {{ agency.commission_percent|floatformat:"-2" }}% commission{% if commission_account %} to {{ commission_account.bank_name }} · {{ commission_account.account_name|default:"Nebret Equb" }} · <span class="mono">{{ commission_account.account_number }}</span>{% endif %}{% if total.receivable %} – you owe <strong>{{ total.receivable|money }} ETB</strong> now{% endif %}. Older sales paid through Nebret are paid out to you by Nebret.</div>
+{% if commission_account %}
+<div class="card mt" id="pay-commission" style="border:2px solid var(--gold)"><div class="card-h"><h2>Pay Nebret's commission</h2>
+  <span class="small muted">{% if total.receivable %}Due now: <b>{{ total.receivable|money }} ETB</b>{% else %}Nothing due right now{% endif %}{% if commission_in_review %} · {{ commission_in_review|money }} ETB being checked{% endif %}</span></div>
+  <p class="small" style="margin-top:0">1. Transfer to <b>{{ commission_account.bank_name }} · {{ commission_account.account_name|default:"Nebret Equb" }} · <span class="mono">{{ commission_account.account_number }}</span></b> and write <b>{{ agency.name }}</b> in the reason. 2. Upload the receipt – it is checked with the bank automatically and your commission is marked paid.</p>
+  <form method="post" enctype="multipart/form-data" class="form-grid">{% csrf_token %}<input type="hidden" name="action" value="commission">
+    <div class="field"><label>Sent from</label><select name="bank" required>{% for v, l in banks %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Amount transferred (ETB)</label><input type="number" step="0.01" min="0.01" name="amount" value="{{ total.receivable|default:''|stringformat:'s' }}" required></div>
+    <div class="field"><label>Transfer date &amp; time</label><input type="datetime-local" name="transfer_datetime" value="{{ now|date:'Y-m-d\TH:i' }}" required></div>
+    <div class="field"><label>Transaction reference <span class="muted">(optional – read from the receipt)</span></label><input type="text" name="reference" placeholder="e.g. FT24123ABC45"></div>
+    <div class="field wide"><label>Receipt (photo or PDF)</label><input type="file" name="file" accept="image/jpeg,image/png,application/pdf" required></div>
+    <div class="form-actions"><button class="btn">Upload receipt</button></div></form>
+  {% if commission_payments %}<div class="table-wrap mt"><table class="t"><thead><tr><th>Sent</th><th>Receipt</th><th class="r">Amount</th><th>Status</th></tr></thead><tbody>
+  {% for cp in commission_payments %}<tr><td class="small">{{ cp.created_at|date:"d M H:i" }}</td><td class="mono small">{{ cp.bank }} {{ cp.display_reference }}</td><td class="r num">{{ cp.amount|money }}</td>
+    <td>{{ cp.status|status_badge:cp.get_status_display }}{% if cp.reason %}<div class="small muted">{{ cp.reason }}</div>{% endif %}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+</div>{% endif %}
 <form class="toolbar mt" method="get"><div class="chips">
   <a class="chip {% if not payout %}on{% endif %}" href="{% qs payout=None page=None %}">All</a>
   {% for v, l in payouts %}<a class="chip {% if payout == v %}on{% endif %}" href="{% qs payout=v page=None %}">{{ l }}</a>{% endfor %}</div></form>

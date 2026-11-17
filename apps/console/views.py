@@ -353,6 +353,28 @@ def users(request):
 
 
 @staff_required
+def user_add(request):
+    """Register a customer at the desk (they can sign in to the app once they have a PIN)."""
+    form = f.CustomerForm(request.POST or None, instance=User(is_active=True))
+    if request.method == "POST" and form.is_valid():
+        u = form.save(commit=False)
+        if not form.cleaned_data.get("new_password"):
+            u.set_unusable_password()
+        u.save()
+        if form.cleaned_data.get("new_password"):
+            u.set_password(form.cleaned_data["new_password"])
+            u.save(update_fields=["password"])
+        messages.success(request, f"{u.full_name} was added." + (
+            f" They sign in to the app with {u.phone} and the PIN you set." if form.cleaned_data.get("new_password")
+            else " Set a PIN later so they can sign in to the app."))
+        return redirect("console:user", pk=u.pk)
+    from .manage_views import _render
+    return _render(request, nav="users", title="Add customer", crumbs="Customers", form=form,
+                   cancel=reverse("console:users"), obj=None,
+                   intro="Register a customer who came to the office or called. Phone number is their app sign-in.")
+
+
+@staff_required
 def user_edit(request, pk):
     u = get_object_or_404(User, pk=pk, is_staff=False)
     form = f.CustomerForm(request.POST or None, instance=u)

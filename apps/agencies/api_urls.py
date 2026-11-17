@@ -6,6 +6,8 @@ urlpatterns = [
     path("dashboard/", api.dashboard),
     path("listings/", api.listings),
     path("uploads/photo/", api.upload_photo),
+    path("commission/", api.commission_payments),
+    path("categories/", api.add_category),
     path("listings/<int:pk>/", api.listing),
     path("listings/<int:pk>/equbs/", api.listing_equbs),
     path("orders/", api.orders),

@@ -78,3 +78,59 @@ class NewCompanyBankAccountTests(TestCase):
             page = self.client.get(reverse("console:agency", args=[agency.pk]))
             self.assertContains(page, "1000777766665")
             self.assertContains(page, agency.bank_accounts.get().account_number)
+
+
+class ConsoleTeamAccessTests(TestCase):
+    def setUp(self):
+        from apps.core.testutils import company_owner
+
+        self.staff = make_user("Admin", staff=True)
+        self.client.force_login(self.staff)
+        self.agency = make_company()
+        self.owner = company_owner(self.agency)
+
+    def test_staff_sets_a_new_pin_for_a_team_member(self):
+        st = self.agency.staff.get(user=self.owner)
+        r = self.client.post(reverse("console:agency", args=[self.agency.pk]),
+                             {"action": "set_pin", "staff": st.pk, "pin": "482915", "pin2": "482915"})
+        self.assertEqual(r.status_code, 302)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.check_password("482915"))
+
+    def test_edit_form_changes_owner_pin(self):
+        data = _post(name=self.agency.name, owner_name=self.owner.full_name, owner_phone=self.owner.phone,
+                     owner_password="739164", pay_bank="", pay_account_name="", pay_account_number="")
+        r = self.client.post(reverse("console:agency_edit", args=[self.agency.pk]), data)
+        self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context["form"].errors)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.check_password("739164"))
+
+    def test_add_customer_from_the_console(self):
+        from apps.accounts.models import User
+
+        self.assertContains(self.client.get(reverse("console:users")), "+ Add customer")
+        r = self.client.post(reverse("console:user_add"), {"full_name": "Sara Bekele", "phone": "0911223399",
+                                                           "preferred_language": "am", "is_active": "on",
+                                                           "new_password": "582741", "confirm_password": "582741"})
+        self.assertEqual(r.status_code, 302, getattr(r, "context", None) and r.context["form"].errors)
+        u = User.objects.get(full_name="Sara Bekele")
+        self.assertTrue(u.check_password("582741"))
+
+
+class OwnCategoryTests(TestCase):
+    """Companies can add their own category ("Other – add my own") from the app."""
+
+    def test_add_category_and_reuse_by_name(self):
+        from apps.core.testutils import client_for, company_owner, make_company
+        from apps.market.models import Category
+
+        company = make_company()
+        api = client_for(company_owner(company))
+        r = api.post("/api/company/categories/", {"name": "  Generators ", "group": "other"}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["name"], "Generators")
+        self.assertEqual(r.data["group"], "OTHER")
+        again = api.post("/api/company/categories/", {"name": "generators"}, format="json")
+        self.assertEqual(again.data["slug"], r.data["slug"])
+        self.assertEqual(Category.objects.filter(name__iexact="generators").count(), 1)
+        self.assertEqual(api.post("/api/company/categories/", {"name": "x"}, format="json").status_code, 409)

@@ -7,7 +7,7 @@
   {% for k, l in queues %}<a class="chip {% if queue == k %}on{% endif %}" href="{% qs queue=k page=None %}">{{ l }}{% if k != 'all' %} <b>{{ counts|get_item:k }}</b>{% endif %}</a>{% endfor %}
 </div>
 <form class="toolbar" method="get"><input type="hidden" name="queue" value="{{ queue }}">
-  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Reference, customer, phone, listing, unit code or ID…">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Reference, customer, phone, product, unit code or ID…">
   <select name="group"><option value="">All categories</option>{% for v, l in groups %}<option value="{{ v }}" {% if group == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="company"><option value="">All sellers</option><option value="nebret" {% if company == 'nebret' %}selected{% endif %}>Nebret</option>{% for c in companies %}<option value="{{ c.pk }}" {% if company == c.pk|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <select name="plan"><option value="">All plans</option>{% for v, l in plans %}<option value="{{ v }}" {% if plan == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>

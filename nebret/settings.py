@@ -277,7 +277,11 @@ NEBRET = {
     # ShegerPay's documented response has no receiver account / transfer time. "strict": when it doesn't return the
     # receiver account, the receipt goes to manual Nebret review. "merchant_name": trust ShegerPay's own check of the
     # receiver name we send as merchant_name.
-    "SHEGERPAY_RECEIVER_CHECK": env("SHEGERPAY_RECEIVER_CHECK", "strict"),
+    # merchant_name (default): ShegerPay checks the receiver against the seller's account name we send it.
+    # strict: no receiver account returned → manual Nebret review.
+    "SHEGERPAY_RECEIVER_CHECK": env("SHEGERPAY_RECEIVER_CHECK", "merchant_name"),
+    # Check a receipt with the bank the moment it is uploaded (and again whenever the order is opened).
+    "VERIFY_ON_SUBMIT": env_bool("VERIFY_ON_SUBMIT", True),
     # Office / showroom payments on marketplace orders are off: bank transfers go through receipts. Turn on only to
     # finish old orders that were being paid at an office.
     "MARKET_OFFICE_PAYMENTS": env_bool("MARKET_OFFICE_PAYMENTS", False),
@@ -314,9 +318,18 @@ if TESTING:
     NEBRET["HOUSE_BANK_ACCOUNT"] = {"bank": "CBE", "account_name": "Nebret Equb Sales", "account_number": "1000555000111",
                                     "currency": "ETB", "branch": "Bole", "swift_code": ""}
     NEBRET["RECEIPT_VERIFIER"] = "fake"
+    NEBRET["VERIFY_ON_SUBMIT"] = False
+    GOOGLE_TRANSLATE_API_KEY = ANTHROPIC_API_KEY = ""
+    NEBRET["SHEGERPAY_RECEIVER_CHECK"] = "strict"
     PRIVATE_MEDIA_ROOT = Path("/tmp") / "nebret-test-private"
 
 # --- ShegerPay (receipt verification) --------------------------------------
+CRON_SECRET = env("CRON_SECRET", "")
+# Translating what people type (products, categories, Equb names …) into am / om / ar / en. Set one of these.
+GOOGLE_TRANSLATE_API_KEY = env("GOOGLE_TRANSLATE_API_KEY", "")
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", "")
+TRANSLATION_MODEL = env("TRANSLATION_MODEL", "claude-haiku-5-5")  # Vercel Cron sends "Authorization: Bearer <CRON_SECRET>"
+
 SHEGERPAY = {
     "API_KEY": env("SHEGERPAY_API_KEY", ""),
     "BASE_URL": env("SHEGERPAY_BASE_URL", "https://api.shegerpay.com"),

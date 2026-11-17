@@ -73,6 +73,9 @@ def proof(request, pk):
     p = get_object_or_404(BankTransferProof.objects.select_related("order__user", "order__company",
                                                                   "partner_confirmed_by", "second_confirmer"), pk=pk)
     here = reverse("console:proof", args=[pk])
+    if request.method == "GET" and p.status in (P.SUBMITTED, P.VERIFYING) and not p.requires_manual_review \
+            and (p.next_check_at is None or p.next_check_at <= timezone.now()):
+        p = bank_transfer.verify_proof(p)
     if request.method == "POST":
         a, d = request.POST.get("action"), request.POST
         if a in ("approve", "decline"):
@@ -91,7 +94,10 @@ def proof(request, pk):
         elif a == "recheck":
             BankTransferProof.objects.filter(pk=p.pk, status__in=[P.SUBMITTED, P.VERIFYING]).update(
                 next_check_at=timezone.now(), requires_manual_review=False)
-            messages.info(request, "It will be checked with the bank on the next scheduler run.")
+            p = bank_transfer.verify_proof(BankTransferProof.objects.get(pk=p.pk))
+            r = p.shegerpay_response or {}
+            messages.info(request, f"Checked with the bank now: {p.get_status_display()}"
+                                   + (f" – {r.get('reason')}" if r.get("reason") else "") + ".")
         return redirect(here)
     return render(request, "console/proof.html", {
         "nav": "proofs", "p": p, "o": p.order, "receipt_url": private_files.signed_url(p.file, request),
@@ -154,6 +160,23 @@ def bank_accounts(request):
 # =========================================================================== commission receivables
 @staff_required
 def commission(request):
+    from apps.agencies import commission as cm
+    from apps.agencies.models import CommissionPayment
+
+    if request.method == "POST" and request.POST.get("payment"):
+        cp = get_object_or_404(CommissionPayment, pk=request.POST["payment"])
+        a = request.POST.get("action")
+        if a == "recheck":
+            CommissionPayment.objects.filter(pk=cp.pk, status__in=["SUBMITTED", "MANUAL"]).update(status="SUBMITTED")
+            cp = cm.verify(CommissionPayment.objects.get(pk=cp.pk))
+            messages.info(request, f"Checked with the bank: {cp.get_status_display()}"
+                                   + (f" – {cp.reason}" if cp.reason else "") + ".")
+        else:
+            _do(request, lambda: cm.manual_decision(cp, request.user, approve=a == "approve",
+                                                    note=request.POST.get("note", ""),
+                                                    amount=request.POST.get("amount") or None),
+                "Commission payment approved – commission marked collected." if a == "approve" else "Rejected.")
+        return redirect(request.get_full_path())
     if request.method == "POST":
         ids = [int(x) for x in request.POST.getlist("entry") if x.isdigit()]
         a, ref = request.POST.get("action"), request.POST.get("reference", "")[:64]
@@ -187,7 +210,8 @@ def commission(request):
     return render(request, "console/commission.html", {
         "nav": "commission", "page": page(request, qs.order_by("-created_at")), "status": status,
         "company": company, "companies": Agency.objects.order_by("name"), "by_company": by_company,
-        "total_due": sum((r["due"] or 0) for r in by_company)})
+        "total_due": sum((r["due"] or 0) for r in by_company),
+        "payments": CommissionPayment.objects.select_related("agency", "submitted_by").order_by("-created_at")[:30]})
 
 
 # =========================================================================== product Equbs
@@ -313,3 +337,11 @@ def conversation(request, pk):
         "placeholder": "Reply as Nebret support… (Enter to send, Shift+Enter for a new line)",
         "restrictions": restrictions, "reports": conv.reports.select_related("reporter"),
         "violations": Violation.objects.filter(message__conversation=conv).select_related("user")[:50]})
+
+
+@staff_required
+def commission_receipt(request, pk):
+    from apps.agencies.models import CommissionPayment
+
+    cp = get_object_or_404(CommissionPayment, pk=pk)
+    return redirect(private_files.signed_url(cp.file, request))

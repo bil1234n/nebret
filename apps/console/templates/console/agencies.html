@@ -15,7 +15,7 @@
   <button class="btn" type="submit">Search</button>
 </form>
 <div class="card"><div class="table-wrap"><table class="t">
-  <thead><tr><th>Company</th><th>Type</th><th>Status</th><th>Bank account</th><th class="r">Live listings</th><th class="r">Customers</th><th class="r">Sales</th><th class="r">Commission</th><th class="r">Owed</th></tr></thead>
+  <thead><tr><th>Company</th><th>Type</th><th>Status</th><th>Bank account</th><th class="r">Live products</th><th class="r">Customers</th><th class="r">Sales</th><th class="r">Commission</th><th class="r">Owed</th></tr></thead>
   <tbody>{% for a in page %}<tr>
     <td><a class="strong" href="{% url 'console:agency' a.pk %}">{{ a.name }}</a>{% if a.is_verified %} <span class="badge b-green">Verified</span>{% endif %}<div class="small muted">{{ a.city }}{% if a.license_number %} · {{ a.license_number }}{% endif %}</div></td>
     <td class="small">{{ a.get_kind_display }}</td><td>{{ a.status|status_badge:a.get_status_display }}</td>

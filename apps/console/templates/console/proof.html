@@ -1,5 +1,5 @@
 {% extends "console/base.html" %}{% load console_tags %}
-{% block title %}Receipt {{ p.normalised_reference }}{% endblock %}{% block heading %}Receipt {{ p.bank }} {{ p.normalised_reference }}{% endblock %}
+{% block title %}Receipt {{ p.display_reference }}{% endblock %}{% block heading %}Receipt {{ p.bank }} {{ p.display_reference }}{% endblock %}
 {% block crumbs %}<a href="{% url 'console:proofs' %}">Receipts</a> / <a href="{% url 'console:order' o.reference %}">{{ o.reference }}</a> · {{ o.user.full_name }}{% endblock %}
 {% block actions %}{{ p.status|status_badge:p.get_status_display }}{% endblock %}
 {% block content %}
@@ -11,7 +11,7 @@
 </div>
 <div class="grid g-2 mt">
   <div class="card"><div class="card-h"><h2>Receipt</h2>{% if receipt_url %}<a class="btn sm" href="{{ receipt_url }}" target="_blank" rel="noopener">Open receipt (5 min link)</a>{% endif %}</div>
-    <dl class="kv"><dt>Sent from</dt><dd>{{ row.bank_label }}</dd><dt>Reference</dt><dd class="mono">{{ p.normalised_reference }} <span class="muted small">(typed “{{ p.reference_as_typed }}”)</span></dd>
+    <dl class="kv"><dt>Sent from</dt><dd>{{ row.bank_label }}</dd><dt>Reference</dt><dd class="mono">{{ p.display_reference }} <span class="muted small">(typed “{{ p.reference_as_typed }}”)</span></dd>
       <dt>Payer</dt><dd>{{ p.payer_name }} {% if p.payer_account %}<span class="mono small muted">{{ p.payer_account }}</span>{% endif %}</dd>
       <dt>Buyer</dt><dd>{{ o.buyer_name|default:o.user.full_name }}{% if o.co_payers %}<div class="small muted">Co-payers: {{ o.co_payers|join:", " }}</div>{% endif %}</dd>
       <dt>Paid into</dt><dd>{{ o.pay_to_account.bank_name }} <span class="mono">{{ o.pay_to_account.account_number }}</span><div class="small muted">{{ o.pay_to_account.account_name }} · {{ o.pay_to_account.currency }}</div></dd>
@@ -40,7 +40,7 @@
 {% if p.status == 'VERIFIED_AWAITING_PARTNER' or p.status == 'DISPUTED' %}
 <div class="grid g-2 mt">
 <form method="post" enctype="multipart/form-data" class="card">{% csrf_token %}<input type="hidden" name="action" value="confirm">
-  <div class="card-h"><h2>Confirm for the seller</h2><span>{% if o.company %}Needs a note and evidence (the seller's statement){% else %}Nebret listing – Nebret confirms{% endif %}</span></div>
+  <div class="card-h"><h2>Confirm for the seller</h2><span>{% if o.company %}Needs a note and evidence (the seller's statement){% else %}Nebret product – Nebret confirms{% endif %}</span></div>
   <div class="form-grid"><div class="field"><label>Amount credited</label><input type="number" step="0.01" name="amount" required></div>
     <div class="field"><label>Payer on statement</label><input type="text" name="payer_name" required></div>
     <div class="field"><label>Credited at</label><input type="datetime-local" name="credited_at" required></div>
@@ -54,5 +54,5 @@
   <button class="btn ghost">Reject receipt</button></form></div>
 {% endif %}
 {% if alerts %}<div class="card mt"><div class="card-h"><h2>Alerts</h2></div><ul>{% for a in alerts %}<li class="small">{{ a.created_at|date:"d M H:i" }} · <b>{{ a.get_kind_display }}</b> – {{ a.message }}{% if a.resolved_at %} <span class="muted">(resolved)</span>{% endif %}</li>{% endfor %}</ul></div>{% endif %}
-{% if others %}<div class="card mt"><div class="card-h"><h2>Other receipts on this order</h2></div><ul>{% for x in others %}<li class="small"><a href="{% url 'console:proof' x.pk %}">{{ x.bank }} {{ x.normalised_reference }}</a> · {{ x.amount_claimed|money }} · {{ x.get_status_display }}</li>{% endfor %}</ul></div>{% endif %}
+{% if others %}<div class="card mt"><div class="card-h"><h2>Other receipts on this order</h2></div><ul>{% for x in others %}<li class="small"><a href="{% url 'console:proof' x.pk %}">{{ x.bank }} {{ x.display_reference }}</a> · {{ x.amount_claimed|money }} · {{ x.get_status_display }}</li>{% endfor %}</ul></div>{% endif %}
 {% endblock %}

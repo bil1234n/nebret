@@ -148,7 +148,7 @@ def listing_form(request, pk=None):
         if listing.status == Listing.Status.ACTIVE and not has_usable_account(request.agency):
             listing.status = Listing.Status.DRAFT
             messages.warning(request, "Saved as a draft: add a bank account in the app and wait for Nebret's approval "
-                                      "before listings go live.")
+                                      "before products go live.")
         listing.save()
         form.save_gallery(listing)
         if not obj and form.cleaned_data.get("initial_units"):
@@ -188,9 +188,9 @@ def listing_detail(request, pk):
             from .bank_accounts import has_usable_account
 
             if action == "publish" and request.agency.status != "ACTIVE":
-                messages.error(request, "Your company must be approved before listings go live.")
+                messages.error(request, "Your company must be approved before products go live.")
             elif action == "publish" and not has_usable_account(request.agency):
-                messages.error(request, "Add a bank account in the app and wait for Nebret's approval before listings "
+                messages.error(request, "Add a bank account in the app and wait for Nebret's approval before products "
                                         "go live – buyers pay straight into it.")
             else:
                 listing.status = Listing.Status.ACTIVE if action == "publish" else Listing.Status.DRAFT
@@ -550,14 +550,31 @@ def equb_place(request, pk):
 # --------------------------------------------------------------------------- earnings, team, profile
 @agency_required()
 def earnings(request):
+    from . import commission as cm
+    from apps.payments.banks import Channel
+
     a = request.agency
+    if request.method == "POST" and request.POST.get("action") == "commission":
+        try:
+            cp = cm.submit(a, request.user, file=request.FILES.get("file"), bank=request.POST.get("bank", ""),
+                           amount=request.POST.get("amount") or 0,
+                           transfer_datetime=request.POST.get("transfer_datetime", ""),
+                           reference=request.POST.get("reference", ""), payer_name=request.POST.get("payer_name", ""))
+        except BusinessRuleError as exc:
+            messages.error(request, str(exc.detail))
+        else:
+            messages.success(request, {"VERIFIED": "Verified by the bank – thank you, your commission is marked paid.",
+                                       "REJECTED": f"The bank check failed: {cp.reason}"}.get(
+                cp.status, "Receipt sent – it is being checked with the bank."))
+        return redirect("agency:earnings")
     status = request.GET.get("payout", "")
     qs = a.ledger.select_related("customer", "order")
     if status:
         qs = qs.filter(payout_status=status)
     return render(request, "agencies/earnings.html", _ctx(
         request, "earnings", **_payment_accounts(a), page=_page(request, qs), total=services.summary(a), payout=status,
-        payouts=AgencyLedgerEntry.Payout.choices))
+        payouts=AgencyLedgerEntry.Payout.choices, commission_payments=a.commission_payments.order_by("-created_at")[:10],
+        commission_in_review=cm.in_review(a), banks=Channel.choices, now=timezone.localtime()))
 
 
 @agency_required()

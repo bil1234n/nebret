@@ -14,7 +14,7 @@
 <div class="card mt" style="border:2px solid var(--gold)">
   <div class="card-h"><h2>Bank-transfer receipts</h2><span>Buyer pays into {{ o.pay_to_account.bank_name }} {{ o.pay_to_account.account_number }} · code <b class="mono">{{ o.payment_code }}</b></span></div>
   <div class="table-wrap"><table class="t"><thead><tr><th>Uploaded</th><th>Bank / reference</th><th>Payer</th><th>Transfer time</th><th class="r">Amount</th><th>Status</th><th></th></tr></thead><tbody>
-  {% for p in proofs %}<tr><td class="small">{{ p.created_at|date:"d M H:i" }}</td><td class="mono small">{{ p.bank }} {{ p.normalised_reference }}</td><td>{{ p.payer_name }}</td>
+  {% for p in proofs %}<tr><td class="small">{{ p.created_at|date:"d M H:i" }}</td><td class="mono small">{{ p.bank }} {{ p.display_reference }}</td><td>{{ p.payer_name }}</td>
     <td class="small">{{ p.transfer_datetime|date:"d M Y H:i" }}</td><td class="r num">{{ p.amount_claimed|money }}</td><td>{{ p.status|status_badge:p.get_status_display }}{% if p.rejection_reason %}<div class="small muted">{{ p.rejection_reason }}</div>{% endif %}{% if p.partner_confirmed_by and not p.second_confirmer and p.status == 'VERIFIED_AWAITING_PARTNER' %}<div class="small muted">1st confirmation by {{ p.partner_confirmed_by.full_name }} – a second owner/manager must confirm</div>{% endif %}</td>
     <td>{% if p.status == 'VERIFIED_AWAITING_PARTNER' and can_manage %}
       <form method="post" class="toolbar" style="margin:0;flex-wrap:wrap">{% csrf_token %}<input type="hidden" name="proof" value="{{ p.pk }}">

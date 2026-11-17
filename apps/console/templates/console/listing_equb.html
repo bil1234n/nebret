@@ -66,7 +66,7 @@ document.querySelectorAll('#pe-form [data-use]').forEach(function (b) {
   });
 });
 </script>
-<div class="card mt"><div class="card-h"><h2>Product Equbs for this listing</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Status</th><th class="r">Contribution</th><th class="r">Members</th><th>Starts</th></tr></thead><tbody>
+<div class="card mt"><div class="card-h"><h2>Product Equbs for this product</h2></div><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Status</th><th class="r">Contribution</th><th class="r">Members</th><th>Starts</th></tr></thead><tbody>
 {% for g in groups %}<tr><td><a href="{% url 'console:equb' g.slug %}">{{ g.name }}</a></td><td>{{ g.status|status_badge:g.get_status_display }}</td><td class="r num">{{ g.contribution_amount|money }} {{ g.every }}</td><td class="r num">{{ g.members_count }} / {{ g.max_members }}</td><td class="small">{{ g.start_date|date:"d M Y" }}</td></tr>
 {% empty %}<tr><td colspan="5" class="empty">None yet.</td></tr>{% endfor %}</tbody></table></div></div>
 {% endblock %}

@@ -141,6 +141,9 @@ def summary(agency: Agency, since=None) -> dict:
     owed = agency.ledger.filter(payout_status=Payout.OWED).aggregate(s=Sum("agency_amount"))["s"] or ZERO
     receivable = agency.ledger.filter(payout_status__in=AgencyLedgerEntry.NEBRET_RECEIVABLE).aggregate(
         s=Sum("commission"))["s"] or ZERO
+    from .commission import credit
+
+    receivable = max(receivable - credit(agency), ZERO)  # verified commission payments not yet matched to a sale
     return {"gross": agg["gross"] or ZERO, "commission": agg["commission"] or ZERO, "share": agg["share"] or ZERO,
             "owed": owed, "receivable": receivable, "net": owed - receivable, "sales": qs.count()}
 

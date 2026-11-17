@@ -16,7 +16,7 @@
   <ol>
     <li><a href="{% url 'console:settings' %}">Check the marketplace categories</a> (cars, apartments, plots, e-bikes…)</li>
     <li><a href="{% url 'console:agency_add' %}">Add a partner company</a> – a real-estate developer, car dealer or e-bike seller</li>
-    <li><a href="{% url 'console:listing_add' %}">Publish a listing</a> with its stock and payment plans</li>
+    <li><a href="{% url 'console:listing_add' %}">Publish a product</a> with its stock and payment plans</li>
     <li><a href="{% url 'console:equb_package_add' %}">Create an Equb package</a>, then <a href="{% url 'console:equb_add' %}">open a group</a> from it, and <a href="{% url 'console:campaign_add' %}">start a crowdfunding campaign</a></li>
   </ol>
 </div>
@@ -53,7 +53,7 @@
 
 <div class="grid g-3 mt">
   <div class="card"><div class="card-h"><h2>Sales by category</h2><span>Value of confirmed orders</span></div><div class="chart-box"><canvas data-chart="categories"></canvas></div></div>
-  <div class="card"><div class="card-h"><h2>Best-selling listings</h2><span>Confirmed orders</span></div><div class="chart-box"><canvas data-chart="top_listings"></canvas></div></div>
+  <div class="card"><div class="card-h"><h2>Best-selling products</h2><span>Confirmed orders</span></div><div class="chart-box"><canvas data-chart="top_listings"></canvas></div></div>
   <div class="card"><div class="card-h"><h2>How customers pay</h2><span>Payment plan of confirmed orders</span></div><div class="chart-box"><canvas data-chart="plans"></canvas></div></div>
 </div>
 

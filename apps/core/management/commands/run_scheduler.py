@@ -47,8 +47,14 @@ class Command(BaseCommand):
 
         rules = EqubSettings.load()
         out = {}
-        # Bank-transfer receipts: verify with ShegerPay here, never inside an HTTP request (Vercel time limits).
+        # Bank-transfer receipts: checked on upload; anything that couldn't be checked yet is retried here.
         out.update({f"receipts_{k}": v for k, v in bank_transfer.verify_due_proofs().items()})
+        from apps.agencies import commission as commission_svc
+
+        out["commission_receipts_checked"] = commission_svc.verify_due()
+        from apps.core.translation import warm_missing
+
+        out["products_translated"] = warm_missing()
         out["receipts_sla_escalated"] = bank_transfer.escalate_overdue_confirmations()
         out["refunds_escalated"] = bank_transfer.escalate_overdue_refunds()
         out["agreements_issued"] = agreement.issue_missing_agreements()

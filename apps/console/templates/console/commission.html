@@ -8,6 +8,19 @@
 <div class="card"><div class="card-h"><h2>Filter</h2></div><form class="toolbar" method="get">
   <select name="status"><option value="open" {% if status == 'open' %}selected{% endif %}>Open (due + invoiced)</option><option value="RECEIVABLE" {% if status == 'RECEIVABLE' %}selected{% endif %}>Due</option><option value="INVOICED" {% if status == 'INVOICED' %}selected{% endif %}>Invoiced</option><option value="COLLECTED" {% if status == 'COLLECTED' %}selected{% endif %}>Collected</option><option value="WRITTEN_OFF" {% if status == 'WRITTEN_OFF' %}selected{% endif %}>Written off</option></select>
   <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.pk }}" {% if company == c.pk|stringformat:'s' %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select><button class="btn">Show</button></form></div></div>
+<div class="card mt"><div class="card-h"><h2>Commission payments from companies</h2><span class="small muted">Companies transfer to Nebret's commission account and upload the receipt – ShegerPay checks it automatically</span></div>
+<div class="table-wrap"><table class="t"><thead><tr><th>Sent</th><th>Company</th><th>Receipt</th><th class="r">Amount</th><th>Status</th><th></th></tr></thead><tbody>
+{% for cp in payments %}<tr>
+  <td class="small">{{ cp.created_at|date:"d M H:i" }}<div class="muted">{{ cp.submitted_by.full_name }}</div></td>
+  <td>{{ cp.agency.name }}</td>
+  <td class="small"><span class="mono">{{ cp.bank }} {{ cp.display_reference }}</span>{% if cp.file %} · <a href="{% url 'console:commission_receipt' cp.pk %}" target="_blank">receipt</a>{% endif %}
+    {% if cp.bank_check.reason %}<div class="muted">{{ cp.bank_check.reason|truncatechars:80 }}</div>{% endif %}</td>
+  <td class="r num strong">{{ cp.amount|money }}{% if cp.unallocated > 0 and cp.status == 'VERIFIED' %}<div class="small muted">{{ cp.unallocated|money }} credit</div>{% endif %}</td>
+  <td>{{ cp.status|status_badge:cp.get_status_display }}{% if cp.reason %}<div class="small muted">{{ cp.reason|truncatechars:70 }}</div>{% endif %}</td>
+  <td class="r">{% if cp.status == 'SUBMITTED' or cp.status == 'MANUAL' %}<form method="post" class="toolbar" style="margin:0;justify-content:flex-end">{% csrf_token %}<input type="hidden" name="payment" value="{{ cp.pk }}">
+    <button class="btn ghost sm" name="action" value="recheck">Check with bank</button><button class="btn sm" name="action" value="approve">Approve</button><button class="btn ghost sm" name="action" value="reject">Reject</button></form>{% endif %}</td></tr>
+{% empty %}<tr><td colspan="6" class="empty">No commission payments yet.</td></tr>{% endfor %}</tbody></table></div></div>
+
 <form method="post" class="card mt">{% csrf_token %}<div class="table-wrap"><table class="t">
   <thead><tr><th></th><th>Date</th><th>Company</th><th>Order</th><th class="r">Sale</th><th class="r">Commission</th><th>Status</th></tr></thead><tbody>
   {% for e in page %}<tr><td><input type="checkbox" name="entry" value="{{ e.pk }}"></td><td class="small">{{ e.created_at|date:"d M Y" }}</td><td>{{ e.agency.name }}</td>

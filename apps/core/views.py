@@ -202,3 +202,26 @@ def private_file(request, token: str):
     resp["Cache-Control"] = "private, no-store"
     resp["X-Content-Type-Options"] = "nosniff"
     return resp
+
+
+def cron_tick(request):
+    """
+    Runs the scheduler once (receipt checks, reminders, expiries, draws …). Called by Vercel Cron, or any pinger such
+    as cron-job.org every few minutes, with ``Authorization: Bearer <CRON_SECRET>`` (or ``?key=<CRON_SECRET>``).
+    """
+    import hmac
+    import io
+
+    from django.conf import settings
+    from django.http import HttpResponseForbidden, JsonResponse
+
+    secret = getattr(settings, "CRON_SECRET", "")
+    given = (request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+             or request.GET.get("key", ""))
+    if not secret or not hmac.compare_digest(given, secret):
+        return HttpResponseForbidden("Set CRON_SECRET and send it as a Bearer token.")
+    from apps.core.management.commands.run_scheduler import Command
+
+    cmd = Command(stdout=io.StringIO(), stderr=io.StringIO())
+    cmd.tick(run_draws=request.GET.get("draws", "1") != "0")
+    return JsonResponse({"ok": True, "log": cmd.stdout.getvalue()[-4000:]})

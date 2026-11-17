@@ -17,7 +17,7 @@
       <div class="nav-label">Overview</div>
       <a href="{% url 'agency:dashboard' %}" class="{% if nav == 'dashboard' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>Dashboard</a>
       <div class="nav-label">Store</div>
-      <a href="{% url 'agency:listings' %}" class="{% if nav == 'listings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>Listings &amp; stock</a>
+      <a href="{% url 'agency:listings' %}" class="{% if nav == 'listings' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>Products &amp; stock</a>
       <a href="{% url 'agency:sell' %}" class="{% if nav == 'sell' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>New sale</a>
       <a href="{% url 'agency:orders' %}" class="{% if nav == 'orders' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>Orders &amp; installments</a>
       <a href="{% url 'agency:handover' %}" class="{% if nav == 'handover' %}active{% endif %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L21 2m-3 3l3 3m-6 0l2 2"/></svg>Handover desk</a>
@@ -55,7 +55,7 @@
       </div>
     </div>
     <div class="content">
-      {% if agency.status == 'PENDING' %}<div class="msg warning">Your company is waiting for approval by Nebret Equb. You can prepare your listings as drafts; they go live and sales open once you are approved.</div>{% endif %}
+      {% if agency.status == 'PENDING' %}<div class="msg warning">Your company is waiting for approval by Nebret Equb. You can prepare your products as drafts; they go live and sales open once you are approved.</div>{% endif %}
       {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
       {% block content %}{% endblock %}
     </div>

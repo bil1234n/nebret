@@ -39,8 +39,9 @@ SHEGERPAY_PROVIDER = {"CBE": "cbe", "BOA": "boa", "AWASH": "awash", "DASHEN": "d
                       "CBEBIRR": "cbebirr"}
 
 
-def auto_verifiable(channel: str, currency: str = "ETB") -> bool:
-    return channel in SHEGERPAY_PROVIDER and currency == "ETB"
+def auto_verifiable(channel: str, currency: str = "ETB", *, has_receipt: bool = False) -> bool:
+    """ShegerPay checks ETB transfers; with the receipt photo it detects the bank itself (OCR / QR)."""
+    return currency == "ETB" and (channel in SHEGERPAY_PROVIDER or has_receipt)
 
 
 def commission_account() -> dict:

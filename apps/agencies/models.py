@@ -327,3 +327,48 @@ class BankAccountEvent(models.Model):
 
     def __str__(self):
         return f"{self.account} {self.action}"
+
+
+class CommissionPayment(TimeStampedModel):
+    """
+    The company paid Nebret's commission by bank transfer into Nebret's commission account and uploaded the receipt.
+    ShegerPay checks it (like a buyer's receipt); once verified the oldest commission due is marked collected.
+    Any amount beyond what was due is kept as ``unallocated`` credit and used for the next commission.
+    """
+
+    class Status(models.TextChoices):
+        SUBMITTED = "SUBMITTED", "Checking with the bank"
+        VERIFIED = "VERIFIED", "Verified – commission collected"
+        MANUAL = "MANUAL", "Nebret is checking"
+        REJECTED = "REJECTED", "Rejected"
+
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, related_name="commission_payments")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    amount_verified = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    unallocated = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    bank = models.CharField(max_length=16)
+    reference = models.CharField(max_length=64, blank=True)
+    transfer_datetime = models.DateTimeField()
+    payer_name = models.CharField(max_length=120, blank=True)
+    file = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.SUBMITTED, db_index=True)
+    reason = models.CharField(max_length=255, blank=True)
+    bank_check = models.JSONField(default=dict, blank=True)
+    verify_attempts = models.PositiveIntegerField(default=0)
+    next_check_at = models.DateTimeField(null=True, blank=True)
+    paid_to = models.JSONField(default=dict, blank=True, help_text="Nebret's account at the time")
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name="+")
+    entries = models.ManyToManyField(AgencyLedgerEntry, blank=True, related_name="commission_payments")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.agency} commission {self.amount} ({self.status})"
+
+    @property
+    def display_reference(self) -> str:
+        return self.reference or "read from receipt…"

@@ -1,9 +1,9 @@
 {% extends "agencies/base.html" %}{% load console_tags %}
-{% block title %}Orders{% endblock %}{% block heading %}Orders &amp; installments{% endblock %}{% block crumbs %}Every order for {{ agency.name }}'s listings{% endblock %}
+{% block title %}Orders{% endblock %}{% block heading %}Orders &amp; installments{% endblock %}{% block crumbs %}Every order for {{ agency.name }}'s products{% endblock %}
 {% block actions %}<a class="btn" href="{% url 'agency:sell' %}">New sale</a>{% endblock %}
 {% block content %}
 <form class="toolbar" method="get">
-  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Order reference, customer, phone, listing or unit code…">
+  <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Order reference, customer, phone, product or unit code…">
   <select name="plan"><option value="">All plans</option>{% for v, l in plans %}<option value="{{ v }}" {% if plan == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="status"><option value="">All statuses</option>{% for v, l in statuses %}<option value="{{ v }}" {% if status == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <button class="btn" type="submit">Search</button>

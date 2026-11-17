@@ -53,8 +53,17 @@ def conversations(request):
         qs = qs.filter(kind=request.query_params["kind"].upper())
     if request.user.is_staff and not request.query_params.get("all"):
         qs = qs.filter(buyer=request.user) | qs.filter(kind=Conversation.Kind.SUPPORT)
+    q = (request.query_params.get("q") or "").strip()
+    if q:
+        from django.db.models import Q
+
+        qs = qs.filter(Q(listing__title__icontains=q) | Q(agency__name__icontains=q) | Q(buyer__full_name__icontains=q)
+                       | Q(order__reference__iexact=q) | Q(messages__text__icontains=q)).distinct()
     rows = [services.conversation_row(c, request.user, request=request)
             for c in qs.order_by("-last_message_at", "-id")[:200]]
+    from apps.core import translation as tr
+
+    tr.localize(rows, tr.request_lang(request), ["*.listing.title", "*.subtitle"])
     return Response(rows)
 
 
@@ -75,7 +84,11 @@ def conversation(request, pk: int):
     msgs = [services.message_row(m, request.user, request=request, staff_view=staff_view) for m in qs]
     if msgs:
         services.mark_read(conv, request.user)
-    return Response({**services.conversation_row(conv, request.user, request=request), "messages": msgs,
+    row = services.conversation_row(conv, request.user, request=request)
+    from apps.core import translation as tr
+
+    tr.localize(row, tr.request_lang(request), ["listing.title", "subtitle"])
+    return Response({**row, "messages": msgs,
                      **services.read_receipts(conv, request.user), "poll_seconds": settings.NEBRET["CHAT_POLL_SECONDS"],
                      "support_phone": settings.NEBRET["SUPPORT_PHONE"]})
 

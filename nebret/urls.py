@@ -5,7 +5,7 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from apps.accounts.web import delete_account, privacy_policy, terms_of_service
-from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView, private_file
+from apps.core.views import AppVersionView, BannerListView, DashboardView, HealthView, LandingView, private_file, cron_tick
 from apps.market.web import verify_agreement
 from apps.luckydraw.web import give
 
@@ -36,6 +36,7 @@ urlpatterns = [
     path("api/notifications/", include("apps.notifications.urls")),
     path("api/chat/", include("apps.chat.urls")),
     path("api/files/<str:token>/", private_file, name="private-file"),
+    path("api/cron/tick/", cron_tick, name="cron-tick"),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="docs"),
 ]

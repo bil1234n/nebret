@@ -12,7 +12,7 @@
 </div>
 <div class="card">
   <div class="card-h"><h2>Marketplace categories</h2><a class="btn sm" href="{% url 'console:category_add' %}">+ Add category</a></div>
-  <div class="table-wrap"><table class="t"><thead><tr><th>Category</th><th>Group</th><th>Specs shown</th><th class="r">Live</th><th class="r">All listings</th><th>Status</th><th></th></tr></thead><tbody>
+  <div class="table-wrap"><table class="t"><thead><tr><th>Category</th><th>Group</th><th>Specs shown</th><th class="r">Live</th><th class="r">All products</th><th>Status</th><th></th></tr></thead><tbody>
   {% for c in categories %}<tr><td class="strong">{{ c.name }}{% if c.name_am %}<div class="small muted">{{ c.name_am }}</div>{% endif %}</td><td class="small">{{ c.get_group_display }}</td>
     <td class="small muted">{% for s in c.spec_fields %}{{ s.label }}{% if not forloop.last %} · {% endif %}{% empty %}—{% endfor %}</td>
     <td class="r num">{{ c.live }}</td><td class="r num">{{ c.n }}</td><td>{% if c.is_active %}<span class="badge b-green">Active</span>{% else %}<span class="badge b-grey">Hidden</span>{% endif %}</td>

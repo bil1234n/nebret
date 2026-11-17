@@ -6,6 +6,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core import translation as tr
+from apps.core.translation import LocalizedResponseMixin
 from apps.core.exceptions import BusinessRuleError
 from apps.payments.serializers import PaymentTransactionSerializer
 
@@ -32,7 +34,8 @@ def _available_annotation(qs):
     return qs.annotate(_available=Count("units", filter=Q(units__status=ListingUnit.Status.AVAILABLE)))
 
 
-class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
+class CategoryViewSet(LocalizedResponseMixin, viewsets.ReadOnlyModelViewSet):
+    localize_fields = tr.CATEGORY_FIELDS
     """Marketplace categories, grouped (VEHICLES · HOMES · LAND · ELECTRONICS)."""
 
     serializer_class = CategorySerializer
@@ -47,7 +50,8 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
         return qs.filter(group=group.upper()) if group else qs
 
 
-class ListingViewSet(viewsets.ReadOnlyModelViewSet):
+class ListingViewSet(LocalizedResponseMixin, viewsets.ReadOnlyModelViewSet):
+    localize_fields = tr.LISTING_FIELDS + tr.LISTING_PAGE
     """
     Browse the marketplace.
 
@@ -153,7 +157,8 @@ class ListingViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(InquirySerializer(inquiry).data, status=status.HTTP_201_CREATED)
 
 
-class CompanyViewSet(viewsets.ReadOnlyModelViewSet):
+class CompanyViewSet(LocalizedResponseMixin, viewsets.ReadOnlyModelViewSet):
+    localize_fields = tr.COMPANY_FIELDS + tr.LISTING_PAGE
     """Verified partner companies: real-estate developers, car dealers, e-bike and electronics sellers."""
 
     serializer_class = CompanySerializer
@@ -180,7 +185,9 @@ class InquiryViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         return Inquiry.objects.filter(user=self.request.user).select_related("listing")
 
 
-class OrderViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class OrderViewSet(LocalizedResponseMixin, mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin,
+                   viewsets.GenericViewSet):
+    localize_fields = tr.ORDER_FIELDS
     """A customer's orders. ``?tab=active|to_pay|completed|closed``."""
 
     permission_classes = [permissions.IsAuthenticated]
@@ -200,6 +207,17 @@ class OrderViewSet(mixins.CreateModelMixin, mixins.ListModelMixin, mixins.Retrie
         if self.action == "create":
             return OrderCreateSerializer
         return OrderDetailSerializer if self.action == "retrieve" else OrderListSerializer
+
+    def retrieve(self, request, *args, **kwargs):
+        order = self.get_object()
+        try:  # receipts that are due for a (re)check are checked with the bank now – no scheduler needed
+            from apps.market.services.bank_transfer import verify_due_for_order
+
+            if verify_due_for_order(order):
+                order = self.get_object()
+        except Exception:  # noqa: BLE001
+            pass
+        return Response(self.get_serializer(order).data)
 
     def create(self, request, *args, **kwargs):
         s = OrderCreateSerializer(data=request.data)

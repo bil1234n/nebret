@@ -269,7 +269,7 @@ def listing_form(request, pk=None):
         return redirect("console:listing", pk=listing.pk)
     from .manage_views import _render
 
-    return _render(request, nav="listings", title=f"Edit {obj.title}" if obj else "New listing", crumbs="Listings",
+    return _render(request, nav="listings", title=f"Edit {obj.title}" if obj else "New product", crumbs="Products",
                    form=form, obj=obj,
                    cancel=reverse("console:listing", args=[obj.pk]) if obj else reverse("console:listings"),
                    delete_url=reverse("console:listing_delete", args=[obj.pk]) if obj and not obj.orders.exists() else None)
@@ -280,10 +280,10 @@ def listing_form(request, pk=None):
 def listing_delete(request, pk):
     obj = get_object_or_404(Listing, pk=pk)
     if obj.orders.exists():
-        messages.error(request, "This listing has orders; archive it instead.")
+        messages.error(request, "This product has orders; archive it instead.")
         return redirect("console:listing", pk=pk)
     obj.delete()
-    messages.success(request, "Listing deleted.")
+    messages.success(request, "Product deleted.")
     return redirect("console:listings")
 
 

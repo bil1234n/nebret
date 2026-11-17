@@ -4,7 +4,7 @@
 <div class="toolbar"><div class="chips">
   <a class="chip {% if tab == 'all' %}on{% endif %}" href="?tab=all">All</a>
   <a class="chip {% if tab == 'waiting' %}on{% endif %}" href="?tab=waiting">Waiting for reply <b>{{ waiting }}</b></a></div>
-  <form method="get" class="toolbar" style="margin:0"><input type="hidden" name="tab" value="{{ tab }}"><input type="search" name="q" value="{{ q }}" placeholder="Buyer, listing or order"><button class="btn ghost">Search</button></form></div>
+  <form method="get" class="toolbar" style="margin:0"><input type="hidden" name="tab" value="{{ tab }}"><input type="search" name="q" value="{{ q }}" placeholder="Buyer, product or order"><button class="btn ghost">Search</button></form></div>
 <div class="card mt">
 {% for r in rows %}{% with c=r.c %}
   <a class="pc-row{% if r.waiting %} waiting{% endif %}" href="{% url 'agency:chat' c.pk %}">
@@ -14,7 +14,7 @@
     <div class="r" style="flex-shrink:0">{% if r.unread %}<span class="badge b-green">{{ r.unread }} new</span>{% elif r.waiting %}<span class="badge b-gold">Waiting</span>{% endif %}
       <div class="small muted">{{ c.last_message_at|date:"d M H:i" }}</div></div>
   </a>{% endwith %}
-{% empty %}<div class="empty">No messages yet. When a buyer asks about one of your listings, the chat appears here.</div>{% endfor %}
+{% empty %}<div class="empty">No messages yet. When a buyer asks about one of your products, the chat appears here.</div>{% endfor %}
 </div>
 <style>.pc-row{display:flex;align-items:center;gap:12px;padding:12px 6px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}.pc-row:hover{background:#F6F8F7}
 .pc-row.waiting{background:#FFFCF2}.pc-avatar{width:40px;height:40px;border-radius:20px;background:#EEF4F1;color:#0F382B;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}</style>

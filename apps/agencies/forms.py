@@ -76,8 +76,20 @@ class AgencyForm(StyledMixin, forms.ModelForm):
                     "company confirms it, and the payment is done – Nebret never holds the money. Supported banks: "
                     + ", ".join(Bank.labels) + ".")
         if self.instance.pk:
-            for n in ("owner_name", "owner_phone", "owner_password"):
-                self.fields.pop(n)
+            from apps.agencies.models import AgencyStaff
+
+            owner = self.instance.staff.filter(role=AgencyStaff.Role.OWNER).select_related("user").first()
+            self.owner_user = owner.user if owner else None
+            self.fields["owner_phone"].required = False
+            self.fields["owner_phone"].initial = owner.user.phone if owner else ""
+            self.fields["owner_phone"].label = "Owner sign-in phone"
+            self.fields["owner_phone"].help_text = "Change it to move the owner's sign-in to a new number."
+            self.fields["owner_name"].initial = owner.user.full_name if owner else ""
+            self.fields["owner_name"].label = "Owner full name"
+            self.fields["owner_password"].label = "New owner PIN (6 digits)"
+            self.fields["owner_password"].help_text = ("Leave empty to keep the current PIN. Set one when the owner forgot "
+                                                       "it – tell them the new PIN privately.")
+            self.fields["owner_password"].widget.input_type = "password"
             from apps.agencies.models import PartnerBankAccount
 
             self.current_account = (self.instance.bank_accounts.filter(status=PartnerBankAccount.Status.APPROVED)
@@ -95,7 +107,11 @@ class AgencyForm(StyledMixin, forms.ModelForm):
                 self.fields[n].required = True
         self.sections = [
             (t, commission_help if t.startswith("Commission") else pay_help if t.startswith("Bank account") else h, f)
-            for t, h, f in self.sections if not (self.instance.pk and t == "Owner account")]
+            for t, h, f in self.sections]
+        if self.instance.pk:
+            self.sections = [(("Owner sign-in", "Full access for Nebret staff: change the owner's name, phone or PIN. "
+                               "Other team members are managed on the company page.", f) if t == "Owner account"
+                              else (t, h, f)) for t, h, f in self.sections]
 
     def clean(self):
         from apps.core.exceptions import BusinessRuleError
@@ -116,6 +132,45 @@ class AgencyForm(StyledMixin, forms.ModelForm):
                          else "pay_swift" if "SWIFT" in msg else "pay_currency" if "ETB" in msg else "pay_bank")
                 self.add_error(field, msg)
         return d
+
+    def save_owner(self, staff):
+        """Edit form: apply changes to the owner's name / sign-in phone / PIN."""
+        from apps.accounts.models import normalize_phone, validate_phone
+        from apps.accounts.models import User
+
+        from .services import set_pin
+
+        u = getattr(self, "owner_user", None)
+        if not u:
+            return []
+        d, changed = self.cleaned_data, []
+        name = (d.get("owner_name") or "").strip()
+        if name and name != u.full_name:
+            u.full_name = name
+            u.save(update_fields=["full_name"])
+            changed.append("name")
+        phone = (d.get("owner_phone") or "").strip()
+        if phone and normalize_phone(phone) != u.phone:
+            from django.core.exceptions import ValidationError
+
+            from apps.core.exceptions import BusinessRuleError
+
+            phone = normalize_phone(phone)
+            try:
+                validate_phone(phone)
+            except ValidationError as exc:
+                raise BusinessRuleError(" ".join(exc.messages)) from exc
+            if User.objects.filter(phone=phone).exclude(pk=u.pk).exists():
+                from apps.core.exceptions import BusinessRuleError
+
+                raise BusinessRuleError("Another account already uses that phone number.")
+            u.phone = phone
+            u.save(update_fields=["phone"])
+            changed.append("phone")
+        if d.get("owner_password"):
+            set_pin(u, d["owner_password"])
+            changed.append("PIN")
+        return changed
 
     def save_bank_account(self, agency, staff):
         """Record the entered account (approved by the staff member saving the form)."""

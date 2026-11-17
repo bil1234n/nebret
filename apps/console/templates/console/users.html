@@ -1,5 +1,6 @@
 {% extends "console/base.html" %}{% load console_tags %}
 {% block title %}Customers{% endblock %}{% block heading %}Customers{% endblock %}{% block crumbs %}People · {{ total }} accounts{% endblock %}
+{% block actions %}<a class="btn" href="{% url 'console:user_add' %}">+ Add customer</a>{% endblock %}
 {% block content %}
 <form class="toolbar" method="get">
   <input class="grow" type="search" name="q" value="{{ q }}" placeholder="Search name, phone, email, national ID or referral code…">

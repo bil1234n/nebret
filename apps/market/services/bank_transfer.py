@@ -266,7 +266,33 @@ def submit_proof(order: Order, user, *, file, bank: str, reference: str, amount,
                                order_reference=order.reference, amount=amount,
                                context=f"receipt uploaded by {getattr(user, 'full_name', '') or user}")
         raise
+    if settings.NEBRET.get("VERIFY_ON_SUBMIT", True) and not proof.requires_manual_review:
+        # check with the bank right away (ShegerPay answers in seconds); if it can't, the next check is scheduled
+        try:
+            proof = verify_proof(proof)
+        except Exception:  # noqa: BLE001 – never lose an uploaded receipt because the check failed
+            log.exception("Immediate verification failed for proof %s", proof.pk)
     return proof
+
+
+READ_FROM_RECEIPT = "RCPT-"
+
+
+def reference_known(proof) -> bool:
+    return not proof.normalised_reference.startswith(READ_FROM_RECEIPT)
+
+
+def verify_due_for_order(order, limit: int = 2) -> int:
+    """Re-check this order's receipts that are due – runs when someone opens the order (no scheduler needed)."""
+    ids = list(BankTransferProof.objects.filter(order=order, status__in=[P.SUBMITTED, P.VERIFYING],
+                                                requires_manual_review=False, next_check_at__lte=timezone.now())
+               .values_list("pk", flat=True)[:limit])
+    for pk in ids:
+        try:
+            verify_proof(BankTransferProof.objects.get(pk=pk))
+        except Exception:  # noqa: BLE001
+            log.exception("Re-check failed for proof %s", pk)
+    return len(ids)
 
 
 def _submit(order, user, *, data, content_type, filename, bank, reference, amount, transfer_datetime, payer_name,
@@ -293,9 +319,16 @@ def _submit(order, user, *, data, content_type, filename, bank, reference, amoun
     bank = (bank or "").upper()
     if bank not in Channel.values:
         raise BusinessRuleError("Choose the bank or wallet the money was sent from.")
-    ref = references.normalise_reference(reference)
-    if len(ref) < 6:
-        raise BusinessRuleError("Enter the transaction reference from the receipt (e.g. FT24123ABC45).")
+    ref = references.normalise_reference(reference or "")
+    typed = bool(ref)
+    if typed and len(ref) < 6:
+        raise BusinessRuleError("That transaction reference looks too short – check it, or leave it empty and we read "
+                                "it from the receipt.")
+    if not typed:
+        # read from the receipt by ShegerPay; a placeholder keeps the (bank, reference) uniqueness rule happy
+        import uuid
+
+        ref = f"{READ_FROM_RECEIPT}{uuid.uuid4().hex[:10].upper()}"
     amount = money(amount)
     if amount <= 0:
         raise BusinessRuleError("Enter the amount you transferred.")
@@ -333,7 +366,8 @@ def _submit(order, user, *, data, content_type, filename, bank, reference, amoun
             raise BusinessRuleError("That installment is not part of this order.")
     currency = order.pay_to_account.get("currency") or order.currency
 
-    references.check_unused(bank, ref)
+    if typed:
+        references.check_unused(bank, ref)
     key = private_files.store(data, content_type, folder=f"receipts/{order.reference}", name=filename)
     purpose = (PaymentTransaction.Purpose.INSTALLMENT if order.status == Order.Status.INSTALLMENTS
                else PaymentTransaction.Purpose.ORDER)
@@ -344,13 +378,14 @@ def _submit(order, user, *, data, content_type, filename, bank, reference, amoun
         platform_fee=order.company.commission_on(amount) if order.company_id else ZERO,
         recorded_by=user if on_behalf else None,
         raw_request={"bank": bank, "reference_as_typed": reference[:128], "payment_code": order.payment_code})
-    references.claim(bank, ref, payment=txn, source="receipt")
+    if typed:
+        references.claim(bank, ref, payment=txn, source="receipt")
     proof = BankTransferProof.objects.create(
         order=order, installment=installment, payment_transaction=txn, submitted_by=user, bank=bank,
         reference_as_typed=reference.strip()[:128], normalised_reference=ref, payer_name=payer_name,
         payer_account=mask_account(payer_account), currency=currency, amount_claimed=amount,
         transfer_datetime=transfer_datetime, file=key, status=P.SUBMITTED, next_check_at=now,
-        requires_manual_review=not auto_verifiable(bank, currency))
+        requires_manual_review=not auto_verifiable(bank, currency, has_receipt=True))
     # Keep the unit while the receipt is checked.
     if order.status == Order.Status.PENDING_PAYMENT:
         until = max(order.expires_at or now, add_business_days(now, _cfg("BANK_HOLD_BUSINESS_DAYS")))
@@ -359,7 +394,7 @@ def _submit(order, user, *, data, content_type, filename, bank, reference, amoun
         if order.unit_id:
             ListingUnit.objects.filter(pk=order.unit_id).update(held_until=until)
     log_event(order, OrderEvent.Kind.PROOF_SUBMITTED,
-              f"Receipt {bank} {ref} for {fmt(amount)} {currency} from {payer_name}"
+              f"Receipt {bank} {ref if typed else '(reference read from the receipt)'} for {fmt(amount)} {currency} from {payer_name}"
               + (f" (uploaded by {user.full_name})" if on_behalf else "") + ".", by=user)
     if proof.requires_manual_review:
         _alert("MANUAL_REVIEW", f"{order.reference}: {bank} receipt {ref} ({fmt(amount)} {currency}) can't be "
@@ -393,10 +428,21 @@ def verify_proof(proof: BankTransferProof) -> BankTransferProof:
 
     order = proof.order
     acc = order.pay_to_account or {}
-    req = VerificationRequest(channel=proof.bank, reference=proof.normalised_reference, amount=proof.amount_claimed,
-                              receiver_account=acc.get("account_number", ""),
+    receipt, rtype = None, "image/jpeg"
+    if proof.file:
+        try:
+            from apps.core import private_files
+
+            receipt = private_files.read(proof.file)
+            rtype = (proof.file or {}).get("content_type") or private_files.sniff(receipt[:16]) or rtype
+        except Exception:  # noqa: BLE001 – checking by reference still works
+            log.warning("Could not read receipt file of proof %s", proof.pk)
+    req = VerificationRequest(channel=proof.bank, reference=proof.normalised_reference if reference_known(proof) else "",
+                              amount=proof.amount_claimed, receiver_account=acc.get("account_number", ""),
                               receiver_name=acc.get("account_name", ""),
-                              payer_account=re.sub(r"\D", "", proof.payer_account), currency=proof.currency)
+                              payer_account=re.sub(r"\D", "", proof.payer_account), currency=proof.currency,
+                              receipt=receipt, receipt_type=rtype,
+                              receipt_name="receipt.pdf" if rtype == "application/pdf" else "receipt.jpg")
     try:
         result = get_verifier().verify(req)
     except Exception as exc:  # noqa: BLE001 – a verifier bug must not stop the scheduler
@@ -439,6 +485,17 @@ def _apply_verification(proof_id: int, result) -> BankTransferProof:
             proof.save()
             return _reject(proof, result.reason or "The bank has no record of this transfer.", by=None)
 
+        if result.transaction_id:
+            rejected = _adopt_reference(proof, order, result)
+            if rejected:
+                return rejected
+        elif not reference_known(proof):
+            proof.requires_manual_review = True
+            proof.next_check_at = None
+            proof.save()
+            _alert("MANUAL_REVIEW", f"{order.reference}: the bank confirmed a receipt but its reference could not be "
+                                    "read – please check it.", order=order, proof=proof)
+            return proof
         problems, manual = _check_facts(proof, order, result)
         if problems:
             proof.save()
@@ -454,13 +511,52 @@ def _apply_verification(proof_id: int, result) -> BankTransferProof:
         return proof
 
 
+def _adopt_reference(proof: BankTransferProof, order: Order, r):
+    """
+    Use the transaction reference the bank returned (read from the receipt, or corrected from a typo) and claim it,
+    so the same transfer can never pay twice. Returns the rejected proof when it was already used.
+    """
+    from apps.payments import references
+    from apps.payments.models import PaymentTransaction
+
+    ref = references.normalise_reference(r.transaction_id)
+    if not ref or ref == proof.normalised_reference:
+        return None
+    by_image = (r.request or {}).get("endpoint") == "verify-image"
+    if reference_known(proof) and not by_image:
+        return None  # _check_facts reports the mismatch
+    try:
+        references.check_unused(proof.bank, ref)
+    except references.DuplicateReference as exc:
+        transaction.on_commit(lambda: references.raise_alert(
+            exc, user=proof.submitted_by, agency=order.company if order.company_id else None,
+            order_reference=order.reference, amount=proof.amount_claimed,
+            context="the same receipt was uploaded again"))
+        proof.save()
+        return _reject(proof, f"This receipt ({ref}) was already used for another payment.", by=None)
+    old = proof.normalised_reference
+    if reference_known(proof):
+        from apps.payments.models import BankReference
+
+        BankReference.objects.filter(bank=proof.bank, reference=old).delete()
+    proof.normalised_reference = ref
+    proof.save(update_fields=["normalised_reference", "updated_at"])
+    txn = proof.payment_transaction
+    if txn:
+        PaymentTransaction.objects.filter(pk=txn.pk).update(provider_reference=ref)
+        references.claim(proof.bank, ref, payment=txn, source="receipt")
+    log_event(order, OrderEvent.Kind.NOTE, f"Reference {ref} read from the receipt by the bank check.")
+    return None
+
+
 def _check_facts(proof: BankTransferProof, order: Order, r) -> tuple[list[str], str]:
     """(reasons to reject, reason to send to manual review instead)."""
     from apps.payments.references import normalise_reference
 
     problems, manual = [], ""
     acc = order.pay_to_account or {}
-    if r.transaction_id and normalise_reference(r.transaction_id) != proof.normalised_reference:
+    if r.transaction_id and reference_known(proof) and \
+            normalise_reference(r.transaction_id) != proof.normalised_reference:
         problems.append("The bank returned a different transaction reference.")
     if r.amount is None:
         manual = "the bank did not return the amount."
@@ -469,16 +565,14 @@ def _check_facts(proof: BankTransferProof, order: Order, r) -> tuple[list[str], 
     if r.receiver_account:
         if not accounts_match(r.receiver_account, acc.get("account_number", "")):
             problems.append("The money was not sent to the seller's account shown in the app.")
-    elif settings.NEBRET.get("SHEGERPAY_RECEIVER_CHECK") == "merchant_name":
-        if r.receiver_name and not names_match(r.receiver_name, acc.get("account_name", "")):
-            problems.append("The money was not sent to the seller's account shown in the app.")
-    else:
+    elif settings.NEBRET.get("SHEGERPAY_RECEIVER_CHECK") == "strict":
         manual = manual or "the bank did not return the receiving account."
-    if r.payer_name:
-        if not any(names_match(r.payer_name, n) for n in allowed_payers(order)):
-            problems.append(f"The transfer was made by {r.payer_name}, who is not the buyer or a declared co-payer.")
-    else:
-        manual = manual or "the bank did not return the payer's name."
+    elif r.receiver_name and not names_match(r.receiver_name, acc.get("account_name", "")):
+        # merchant_name (default): we send the seller's account name and ShegerPay checks the receiver itself
+        problems.append("The money was not sent to the seller's account shown in the app.")
+    if r.payer_name and not any(names_match(r.payer_name, n) for n in allowed_payers(order)):
+        problems.append(f"The transfer was made by {r.payer_name}, who is not the buyer or a declared co-payer.")
+    # no payer from the bank: the seller still checks the payer on their statement before confirming
     window_start = order.created_at - time_tolerance()
     if r.transferred_at:
         when = r.transferred_at if timezone.is_aware(r.transferred_at) else timezone.make_aware(r.transferred_at)
@@ -814,13 +908,13 @@ def proof_row(proof: BankTransferProof, request=None, *, for_staff: bool = False
     from apps.core import private_files
 
     labels = {P.SUBMITTED: "Verifying with bank", P.VERIFYING: "Verifying with bank",
-              P.VERIFIED_AWAITING_PARTNER: "Waiting for seller", P.CONFIRMED: "Confirmed",
+              P.VERIFIED_AWAITING_PARTNER: "Verified by bank – waiting for seller", P.CONFIRMED: "Confirmed",
               P.REJECTED: "Rejected", P.DISPUTED: "Being checked by Nebret", P.EXPIRED: "Expired"}
     row = {
         "id": proof.pk, "order": proof.order.reference, "status": proof.status,
         "status_label": labels.get(proof.status, proof.get_status_display()),
         "bank": proof.bank, "bank_label": dict(Channel.choices).get(proof.bank, proof.bank),
-        "reference": proof.normalised_reference, "amount_claimed": str(proof.amount_claimed),
+        "reference": proof.display_reference, "amount_claimed": str(proof.amount_claimed),
         "amount_verified": str(proof.amount_verified) if proof.amount_verified is not None else None,
         "currency": proof.currency, "payer_name": proof.payer_name, "payer_account": proof.payer_account,
         "transfer_datetime": proof.transfer_datetime, "created_at": proof.created_at,

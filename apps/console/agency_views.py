@@ -55,11 +55,12 @@ def agency_form(request, pk=None):
             try:
                 with transaction.atomic():
                     form.save()
+                    owner_changes = form.save_owner(request.user)
                     acc = form.save_bank_account(obj, request.user)
             except BusinessRuleError as exc:
                 form.add_error(None, str(exc.detail))
             else:
-                messages.success(request, "Company saved." + (
+                messages.success(request, "Company saved." + (f" Owner {', '.join(owner_changes)} updated." if owner_changes else "") + (
                     f" New bank account {acc.masked_number} is used for new orders from "
                     f"{timezone.localtime(acc.usable_from):%d %b %Y %H:%M}." if acc else ""))
                 return redirect("console:agency", pk=obj.pk)
@@ -134,6 +135,34 @@ def agency_detail(request, pk):
                     a.status = new
                     a.save(update_fields=["status", "updated_at"])
                     messages.success(request, f"{a.name} is now {a.get_status_display().lower()}.")
+            elif action in ("set_pin", "toggle_staff", "set_role"):
+                from apps.agencies.models import AgencyStaff
+
+                st = get_object_or_404(AgencyStaff, pk=request.POST.get("staff"), agency=a)
+                if action == "set_pin":
+                    pin, again = request.POST.get("pin", ""), request.POST.get("pin2", "")
+                    if pin != again:
+                        raise BusinessRuleError("The two PINs are not the same.")
+                    ag.set_pin(st.user, pin)
+                    messages.success(request, f"New PIN set for {st.user.full_name}. They sign in with "
+                                              f"{st.user.phone} and the new PIN.")
+                elif action == "toggle_staff":
+                    if st.role == AgencyStaff.Role.OWNER and st.is_active and \
+                            not a.staff.filter(role=AgencyStaff.Role.OWNER, is_active=True).exclude(pk=st.pk).exists():
+                        raise BusinessRuleError("This is the only owner – make someone else owner first.")
+                    st.is_active = not st.is_active
+                    st.save(update_fields=["is_active"])
+                    messages.success(request, f"{st.user.full_name} is {'enabled' if st.is_active else 'disabled'}.")
+                else:
+                    role = request.POST.get("role")
+                    if role not in AgencyStaff.Role.values:
+                        raise BusinessRuleError("Choose a role.")
+                    if st.role == AgencyStaff.Role.OWNER and role != st.role and \
+                            not a.staff.filter(role=AgencyStaff.Role.OWNER, is_active=True).exclude(pk=st.pk).exists():
+                        raise BusinessRuleError("This is the only owner – make someone else owner first.")
+                    st.role = role
+                    st.save(update_fields=["role"])
+                    messages.success(request, f"{st.user.full_name} is now {st.get_role_display().lower()}.")
             elif action == "add_staff":
                 if staff_form.is_valid():
                     d = staff_form.cleaned_data
@@ -147,7 +176,7 @@ def agency_detail(request, pk):
         return redirect(here)
     owed = a.ledger.filter(payout_status=Payout.OWED).select_related("customer", "order")
     return render(request, "console/agency_detail.html", {
-        "nav": "agencies", "a": a, "total": ag.summary(a), "owed": owed,
+        "nav": "agencies", "a": a, "total": ag.summary(a), "owed": owed, "roles": __import__("apps.agencies.models", fromlist=["AgencyStaff"]).AgencyStaff.Role.choices,
         "ledger": a.ledger.select_related("customer", "order")[:30],
         "listings": a.listings.select_related("category").order_by("-created_at")[:15],
         "orders": a.orders.select_related("user", "listing").order_by("-created_at")[:15],

@@ -1,7 +1,7 @@
 {% extends "console/base.html" %}{% load console_tags %}
 {% block title %}{{ a.name }}{% endblock %}{% block heading %}{{ a.name }}{% endblock %}
 {% block crumbs %}<a href="{% url 'console:agencies' %}">Partner companies</a> / {{ a.get_kind_display }} · {{ a.get_status_display }}{% endblock %}
-{% block actions %}<a class="btn ghost" href="{% url 'console:listing_add' %}">+ Listing</a><a class="btn ghost" href="{% url 'console:agency_edit' a.pk %}">Edit</a>{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'console:listing_add' %}">+ Product</a><a class="btn ghost" href="{% url 'console:agency_edit' a.pk %}">Edit</a>{% endblock %}
 {% block content %}
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Sales</div><div class="value">{{ total.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ total.sales }} payment{{ total.sales|pluralize }}</div></div>
@@ -19,7 +19,7 @@
       <dt>Account number</dt><dd class="mono">{{ acc.account_number }} · {{ acc.currency }}</dd></dl>
     {% if acc.status == "APPROVED" and not acc.is_usable %}<form method="post" action="{% url 'console:bank_accounts' %}?status=APPROVED" class="toolbar" style="margin:6px 0 0">{% csrf_token %}<input type="hidden" name="account" value="{{ acc.pk }}"><input type="hidden" name="note" value="Started from the company page"><input type="hidden" name="next" value="{% url 'console:agency' a.pk %}"><span class="small muted grow">Starts automatically {{ acc.usable_from|date:"d M H:i" }}.</span><button class="btn sm" name="action" value="use_now">Use now</button></form>{% endif %}
     {% empty %}
-    <p class="small muted">No bank account yet, so this company's listings can't be published or take orders. <a href="{% url 'console:agency_edit' a.pk %}">Add it</a>.</p>
+    <p class="small muted">No bank account yet, so this company's products can't be published or take orders. <a href="{% url 'console:agency_edit' a.pk %}">Add it</a>.</p>
     {% endfor %}
     <p class="small muted" style="margin:12px 0 0">Buyers transfer straight into this account. Nebret checks each receipt with ShegerPay and {{ a.name }} confirms it. <a href="{% url 'console:bank_accounts' %}?status=">All bank accounts →</a></p>
     <div class="note-box" style="margin-top:12px"><strong>Commission ({{ a.commission_percent|floatformat:"-2" }}%)</strong> – {{ a.name }} transfers it to
@@ -65,10 +65,10 @@
 .cc-reply{display:flex;gap:8px;margin-top:10px}.cc-reply input{flex:1}</style>
 
 <div class="grid g-2 mt">
-  <div class="card"><div class="card-h"><h2>Listings</h2><a class="small" href="{% url 'console:listings' %}?company={{ a.pk }}">All →</a></div>
-    <div class="table-wrap"><table class="t"><thead><tr><th>Listing</th><th class="r">Price</th><th>Status</th></tr></thead><tbody>
+  <div class="card"><div class="card-h"><h2>Products</h2><a class="small" href="{% url 'console:listings' %}?company={{ a.pk }}">All →</a></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>Product</th><th class="r">Price</th><th>Status</th></tr></thead><tbody>
     {% for l in listings %}<tr><td><a class="strong" href="{% url 'console:listing' l.pk %}">{{ l.title }}</a><div class="small muted">{{ l.category.name }}</div></td><td class="r num">{{ l.price|money }}</td><td>{{ l.status|status_badge:l.get_status_display }}</td></tr>
-    {% empty %}<tr><td colspan="3" class="empty">No listings yet.</td></tr>{% endfor %}</tbody></table></div></div>
+    {% empty %}<tr><td colspan="3" class="empty">No products yet.</td></tr>{% endfor %}</tbody></table></div></div>
   <div class="card"><div class="card-h"><h2>Orders</h2><a class="small" href="{% url 'console:orders' %}?company={{ a.pk }}">All →</a></div>
     <div class="table-wrap"><table class="t"><thead><tr><th>Ref</th><th>Customer</th><th>Status</th><th class="r">Paid</th></tr></thead><tbody>
     {% for o in orders %}<tr><td><a class="mono strong" href="{% url 'console:order' o.reference %}">{{ o.reference }}</a><div class="small muted">{{ o.listing.title|truncatechars:26 }}</div></td><td>{{ o.user.full_name }}</td><td>{{ o.status|status_badge:o.get_status_display }}</td><td class="r num">{{ o.amount_paid|money }}</td></tr>
@@ -93,7 +93,19 @@
     {% empty %}<tr><td colspan="6" class="empty">No sales yet.</td></tr>{% endfor %}</tbody></table></div></div>
   <div>
     <div class="card"><div class="card-h"><h2>Team</h2></div>
-      {% for s in staff %}<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)"><span>{{ s.user.full_name }} <span class="small muted mono">{{ s.user.phone }}</span></span><span class="small">{{ s.get_role_display }}{% if not s.is_active %} · <span class="badge b-red">Disabled</span>{% endif %}</span></div>{% endfor %}
+      {% for s in staff %}<div style="padding:9px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;justify-content:space-between;align-items:center"><span><b>{{ s.user.full_name }}</b> <span class="small muted mono">{{ s.user.phone }}</span></span>
+          <span class="small">{{ s.get_role_display }}{% if not s.is_active %} · <span class="badge b-red">Disabled</span>{% endif %}</span></div>
+        <details style="margin-top:6px"><summary class="small" style="cursor:pointer;color:var(--green)">Manage sign-in &amp; role</summary>
+          <form method="post" class="toolbar" style="margin:8px 0 0">{% csrf_token %}<input type="hidden" name="action" value="set_pin"><input type="hidden" name="staff" value="{{ s.pk }}">
+            <input type="password" name="pin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="New 6-digit PIN" required autocomplete="new-password">
+            <input type="password" name="pin2" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="Repeat PIN" required autocomplete="new-password">
+            <button class="btn sm">Set new PIN</button></form>
+          <form method="post" class="toolbar" style="margin:8px 0 0">{% csrf_token %}<input type="hidden" name="staff" value="{{ s.pk }}">
+            <select name="role">{% for v, l in roles %}<option value="{{ v }}" {% if v == s.role %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+            <button class="btn ghost sm" name="action" value="set_role">Change role</button>
+            <button class="btn ghost sm" name="action" value="toggle_staff">{% if s.is_active %}Disable{% else %}Enable{% endif %}</button></form>
+        </details></div>{% endfor %}
       <details style="margin-top:12px"><summary class="strong">+ Add a team member</summary>
         <form method="post" style="margin-top:10px">{% csrf_token %}<input type="hidden" name="action" value="add_staff">
           {% for bf in staff_form %}{% include "console/_field.html" with bf=bf %}{% endfor %}<button class="btn sm">Add</button></form></details>

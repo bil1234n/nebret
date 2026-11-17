@@ -430,6 +430,11 @@ def payments(request):
     from apps.market.models import BankTransferProof
     from apps.market.services import bank_transfer
 
+    due = (BankTransferProof.objects.filter(order__company=request.agency, status__in=["SUBMITTED", "VERIFYING"],
+                                            requires_manual_review=False, next_check_at__lte=timezone.now())
+           .select_related("order")[:3])
+    for p in due:  # check receipts that are due with the bank now (no scheduler needed)
+        bank_transfer.verify_due_for_order(p.order, limit=1)
     qs = BankTransferProof.objects.filter(order__company=request.agency).select_related("order__user",
                                                                                          "partner_confirmed_by")
     tab = request.query_params.get("tab") or "to_confirm"
@@ -757,3 +762,54 @@ def profile(request):
                      "team": [{"name": s.user.full_name, "phone": s.user.phone, "role": s.role,
                                "role_label": s.get_role_display(), "is_active": s.is_active}
                               for s in a.staff.select_related("user")]})
+
+
+
+@company_api(["GET", "POST"])
+def commission_payments(request):
+    """
+    GET – commission due, Nebret's commission account and the company's commission payments.
+    POST multipart – ``file``, ``bank``, ``amount``, ``transfer_datetime`` (ISO), optional ``reference``, ``payer_name``.
+    The receipt is checked with the bank right away.
+    """
+    from apps.payments.banks import commission_account
+
+    from . import commission as cm
+
+    agency = request.agency
+    if request.method == "POST":
+        d = request.data
+        cp = cm.submit(agency, request.user, file=request.FILES.get("file"), bank=d.get("bank", ""),
+                       amount=d.get("amount") or 0, transfer_datetime=d.get("transfer_datetime", ""),
+                       reference=d.get("reference", ""), payer_name=d.get("payer_name", ""))
+        return Response(cm.row(cp, request), status=201)
+    acc = commission_account()
+    return Response({
+        "due": str(cm.due(agency)), "in_review": str(cm.in_review(agency)), "credit": str(cm.credit(agency)),
+        "account": ({k: acc.get(k, "") for k in ("bank", "bank_name", "account_name", "account_number", "branch")}
+                    if acc else None),
+        "payments": [cm.row(cp, request) for cp in agency.commission_payments.order_by("-created_at")[:30]]})
+
+
+
+@company_api(["POST"])
+def add_category(request):
+    """``POST {name, group?}`` – the company adds its own category ("Other – add my own"). Reuses one with the same
+    name. Nebret can rename or merge it later in the console."""
+    from django.db.models.functions import Lower
+
+    from apps.market.models import Category
+    from apps.market.serializers import CategorySerializer
+
+    _need_manager(request)
+    name = " ".join(str(request.data.get("name", "")).split())[:80]
+    if len(name) < 2:
+        raise BusinessRuleError("Type the category name.")
+    group = str(request.data.get("group") or Category.Group.OTHER).upper()
+    if group not in Category.Group.values:
+        group = Category.Group.OTHER
+    cat = Category.objects.annotate(n=Lower("name")).filter(n=name.lower(), is_active=True).first()
+    if not cat:
+        cat = Category.objects.create(name=name, group=group, icon="pricetag", created_by_agency=request.agency,
+                                      sort_order=900)
+    return Response(CategorySerializer(cat).data, status=201)

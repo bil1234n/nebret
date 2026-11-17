@@ -13,3 +13,19 @@ class MarketConfig(AppConfig):
 
         registry.register("ORDER", on_success=on_order_paid, on_failure=on_order_payment_failed)
         registry.register("INSTALLMENT", on_success=on_order_paid, on_failure=on_order_payment_failed)
+
+        from django.db.models.signals import post_save
+
+        from .models import Listing
+
+        post_save.connect(_translate_listing, sender=Listing, dispatch_uid="translate_listing")
+
+
+def _translate_listing(sender, instance, **kwargs):
+    """Translate a saved product into every app language (after the save is committed)."""
+    from django.db import transaction
+
+    from apps.core import translation
+
+    if translation.enabled():
+        transaction.on_commit(lambda: translation.warm_listing(instance))

@@ -9,6 +9,8 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from apps.core import translation as tr
+from apps.core.translation import LocalizedResponseMixin
 from apps.core.permissions import IsStaffOrReadOnly
 from apps.market.models import Order
 from apps.payments.serializers import PayRequestSerializer, PaymentTransactionSerializer
@@ -24,7 +26,8 @@ from .serializers import (ContributionSerializer, DependentSerializer, GroupEqub
                           terms_lines)
 
 
-class EqubPackageViewSet(viewsets.ReadOnlyModelViewSet):
+class EqubPackageViewSet(LocalizedResponseMixin, viewsets.ReadOnlyModelViewSet):
+    localize_fields = tr.EQUB_FIELDS
     """Equb packages (the templates groups are created from). List them, then ``equb/groups/?package=<slug>``."""
 
     serializer_class = None
@@ -45,7 +48,8 @@ class EqubPackageViewSet(viewsets.ReadOnlyModelViewSet):
                                                                                    EqubGroup.Status.ACTIVE]))))
 
 
-class EqubGroupViewSet(viewsets.ModelViewSet):
+class EqubGroupViewSet(LocalizedResponseMixin, viewsets.ModelViewSet):
+    localize_fields = tr.EQUB_FIELDS
     """Property Equb circles. Members join, contribute each round and a winner is drawn per cycle."""
 
     permission_classes = [IsStaffOrReadOnly]
@@ -253,7 +257,8 @@ def membership_detail(m: EqubMembership, request) -> dict:
     }
 
 
-class MembershipViewSet(viewsets.ReadOnlyModelViewSet):
+class MembershipViewSet(LocalizedResponseMixin, viewsets.ReadOnlyModelViewSet):
+    localize_fields = ["group.name", "*.group.name", "results.*.group.name", "group_name", "*.group_name", "results.*.group_name"]
     """My Equb places: standing, schedule, payments, exit requests."""
 
     serializer_class = MembershipSerializer

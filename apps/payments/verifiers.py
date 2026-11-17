@@ -38,6 +38,10 @@ class VerificationRequest:
     receiver_name: str
     payer_account: str = ""     # needed by ShegerPay for some BOA receipts
     currency: str = "ETB"
+    # the receipt itself (photo / PDF) – ShegerPay reads its QR code or text when there is no reference
+    receipt: bytes | None = None
+    receipt_name: str = "receipt.jpg"
+    receipt_type: str = "image/jpeg"
 
 
 @dataclass
@@ -98,20 +102,44 @@ class ShegerPayVerifier(ReceiptVerifier):
         self.timeout = timeout or cfg.get("TIMEOUT", 20)
 
     def verify(self, req: VerificationRequest) -> VerificationResult:
+        """
+        By reference (``POST /api/v1/verify``) when the buyer typed one; otherwise – or when the typed reference isn't
+        found – from the receipt photo / PDF (``POST /api/v1/verify-image``, field ``screenshot``): ShegerPay reads
+        the QR code or the text, detects the bank and checks it at the source.
+        """
         provider = SHEGERPAY_PROVIDER.get(req.channel)
-        if not provider or req.currency != "ETB":
+        if req.currency != "ETB" or (not provider and not req.receipt):
             return VerificationResult("UNSUPPORTED", reason=f"{req.channel} / {req.currency} can't be verified "
                                                             "automatically by ShegerPay.")
         if not self.api_key:
             return VerificationResult("ERROR", reason="SHEGERPAY_API_KEY is not set.")
-        data = {"provider": provider, "transaction_id": req.reference, "amount": str(req.amount),
-                "merchant_name": req.receiver_name}
+        if not req.reference or not provider:
+            return self._post(req, image=True, provider=provider)
+        result = self._post(req, image=False, provider=provider)
+        if result.outcome == "NOT_FOUND" and req.receipt:
+            by_image = self._post(req, image=True, provider=provider)
+            if by_image.outcome != "ERROR":
+                return by_image
+        return result
+
+    def _post(self, req: VerificationRequest, *, image: bool, provider: str | None) -> VerificationResult:
+        data = {"amount": str(req.amount), "merchant_name": req.receiver_name}
+        if provider:
+            data["provider"] = provider
+        if req.reference:
+            data["transaction_id"] = req.reference
         if req.payer_account:
             data["sender_account"] = req.payer_account
-        safe_request = {**data, "sender_account": "•••" if req.payer_account else ""}
+        safe_request = {**data, "sender_account": "•••" if req.payer_account else "",
+                        "endpoint": "verify-image" if image else "verify"}
         try:
-            resp = requests.post(f"{self.base_url}/api/v1/verify", data=data, timeout=self.timeout,
-                                 headers={"X-API-Key": self.api_key, "User-Agent": "Nebret/1.0"})
+            if image:
+                resp = requests.post(f"{self.base_url}/api/v1/verify-image", data=data, timeout=max(self.timeout, 45),
+                                     files={"screenshot": (req.receipt_name, req.receipt, req.receipt_type)},
+                                     headers={"X-API-Key": self.api_key, "User-Agent": "Nebret/1.0"})
+            else:
+                resp = requests.post(f"{self.base_url}/api/v1/verify", data=data, timeout=self.timeout,
+                                     headers={"X-API-Key": self.api_key, "User-Agent": "Nebret/1.0"})
         except requests.RequestException as exc:
             return VerificationResult("ERROR", reason=f"ShegerPay unreachable: {exc}"[:255], request=safe_request)
         try:
@@ -173,15 +201,34 @@ class FakeVerifier(ReceiptVerifier):
         cls.transfers[(channel.upper(), reference.upper())] = facts
 
     @classmethod
+    def register_image(cls, receipt: bytes, channel: str, reference: str, **facts):
+        """A receipt photo the fake "OCR" can read: it finds ``reference`` on it."""
+        import hashlib
+
+        cls.register(channel, reference, **facts)
+        cls.images[hashlib.sha256(receipt).hexdigest()] = (channel.upper(), reference.upper())
+
+    images: dict[str, tuple[str, str]] = {}
+
+    @classmethod
     def reset(cls):
-        cls.transfers, cls.outage = {}, False
+        cls.transfers, cls.images, cls.outage = {}, {}, False
 
     def verify(self, req: VerificationRequest) -> VerificationResult:
         if self.outage:
             return VerificationResult("ERROR", reason="Fake outage")
-        if req.channel not in SHEGERPAY_PROVIDER or req.currency != "ETB":
+        if req.currency != "ETB" or (req.channel not in SHEGERPAY_PROVIDER and not req.receipt):
             return VerificationResult("UNSUPPORTED", reason="Not verifiable automatically")
-        t = self.transfers.get((req.channel, req.reference))
+        reference = req.reference
+        t = self.transfers.get((req.channel, reference)) if reference else None
+        if not t and req.receipt:
+            import hashlib
+
+            found = self.images.get(hashlib.sha256(req.receipt).hexdigest())
+            if found:
+                reference = found[1]
+                t = self.transfers.get(found)
+        req = VerificationRequest(**{**req.__dict__, "reference": reference})
         if not t:
             return VerificationResult("NOT_FOUND", reason="Transfer not found at the bank")
         if t.get("pending"):

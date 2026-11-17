@@ -51,6 +51,7 @@ class Category(models.Model):
         HOMES = "HOMES", "Houses & apartments"
         LAND = "LAND", "Land & commercial"
         ELECTRONICS = "ELECTRONICS", "E-bikes & electronics"
+        OTHER = "OTHER", "Other products"
 
     group = models.CharField(max_length=12, choices=Group.choices, db_index=True)
     name = models.CharField(max_length=80)
@@ -65,6 +66,9 @@ class Category(models.Model):
                   '{"key": "area_m2", "label": "Area", "unit": "m²"}]')
     sort_order = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    created_by_agency = models.ForeignKey("agencies.Agency", null=True, blank=True, on_delete=models.SET_NULL,
+                                          related_name="own_categories",
+                                          help_text="Added by a partner company (\"Other – add my own\")")
 
     class Meta:
         ordering = ["sort_order", "name"]
@@ -641,6 +645,12 @@ class BankTransferProof(TimeStampedModel):
 
     def __str__(self):
         return f"{self.order.reference} {self.bank}:{self.normalised_reference} ({self.status})"
+
+    @property
+    def display_reference(self) -> str:
+        """The bank reference, or a note while ShegerPay is still reading it from the receipt."""
+        ref = self.normalised_reference or ""
+        return "read from receipt…" if ref.startswith("RCPT-") else ref
 
     @property
     def needs_second_confirmer(self) -> bool:

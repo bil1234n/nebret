@@ -1,6 +1,6 @@
 {% extends "agencies/base.html" %}{% load console_tags %}
 {% block title %}{{ l.title }}{% endblock %}{% block heading %}{{ l.title }}{% endblock %}
-{% block crumbs %}<a href="{% url 'agency:listings' %}">Listings</a> / {{ l.category.name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'agency:listings' %}">Products</a> / {{ l.category.name }}{% endblock %}
 {% block actions %}{{ l.status|status_badge:l.get_status_display }}
 {% if me.can_manage %}<a class="btn ghost" href="{% url 'agency:listing_edit' l.pk %}">Edit</a>
 <form method="post" style="display:inline">{% csrf_token %}{% if l.status == 'DRAFT' %}<input type="hidden" name="action" value="publish"><button class="btn">Publish</button>{% else %}<input type="hidden" name="action" value="unpublish"><button class="btn ghost">Hide</button>{% endif %}</form>{% endif %}

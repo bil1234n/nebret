@@ -2,13 +2,13 @@
 {% block title %}Dashboard{% endblock %}
 {% block heading %}Welcome, {{ request.user.first_name }}{% endblock %}
 {% block crumbs %}{{ agency.name }} · {% now "F Y" %}{% endblock %}
-{% block actions %}<a class="btn ghost" href="{% url 'agency:listing_add' %}">+ Listing</a><a class="btn" href="{% url 'agency:sell' %}">New sale</a>{% endblock %}
+{% block actions %}<a class="btn ghost" href="{% url 'agency:listing_add' %}">+ Product</a><a class="btn" href="{% url 'agency:sell' %}">New sale</a>{% endblock %}
 {% block content %}
 <div class="grid g-4">
   <div class="card kpi dark"><div class="label">Sales this month</div><div class="value">{{ month.gross|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">{{ month.sales }} payment{{ month.sales|pluralize }} received</div></div>
   <div class="card kpi"><div class="label">Your share this month</div><div class="value">{{ month.share|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">after {{ month.commission|money }} platform fee</div></div>
   <div class="card kpi gold"><div class="label">Owed to you</div><div class="value">{{ total.owed|compact }} <small style="font-size:14px">ETB</small></div><div class="sub">paid out by Nebret Equb</div></div>
-  <div class="card kpi"><div class="label">Live listings</div><div class="value">{{ counts.listings }}</div><div class="sub">{{ counts.units }} unit{{ counts.units|pluralize }} for sale</div></div>
+  <div class="card kpi"><div class="label">Live products</div><div class="value">{{ counts.listings }}</div><div class="sub">{{ counts.units }} unit{{ counts.units|pluralize }} for sale</div></div>
 </div>
 <div class="grid g-4 mt">
   <a class="card kpi" href="{% url 'agency:orders' %}?status=INSTALLMENTS"><div class="label">Paying installments</div><div class="value">{{ counts.installments }}</div><div class="sub">{{ counts.active_orders }} active order{{ counts.active_orders|pluralize }}</div></a>
@@ -17,7 +17,7 @@
   <a class="card kpi" href="{% url 'agency:customers' %}"><div class="label">Customers</div><div class="value">{{ counts.customers }}</div><div class="sub">signed up by your team</div></a>
 </div>
 
-{% if not pay_account %}<div class="note-box mt">You don't have an approved bank account yet, so buyers can't pay and your listings can't go live. Nebret adds it from your company documents, or the owner can submit it in the app. <a href="{% url 'agency:profile' %}">See your payment details →</a></div>
+{% if not pay_account %}<div class="note-box mt">You don't have an approved bank account yet, so buyers can't pay and your products can't go live. Nebret adds it from your company documents, or the owner can submit it in the app. <a href="{% url 'agency:profile' %}">See your payment details →</a></div>
 {% elif total.receivable %}<div class="note-box mt">You owe Nebret <strong>{{ total.receivable|money }} ETB</strong> commission on payments buyers sent to your account.{% if commission_account %} Please transfer it to {{ commission_account.bank_name }} · {{ commission_account.account_name|default:"Nebret Equb" }} · <span class="mono">{{ commission_account.account_number }}</span>.{% endif %} <a href="{% url 'agency:earnings' %}">See details →</a></div>{% endif %}
 
 <div class="grid g-2 mt">
@@ -39,7 +39,7 @@
   {% for e in recent %}<tr><td class="small">{{ e.created_at|date:"d M" }}</td><td>{{ e.customer.full_name }}</td>
     <td>{% if e.order %}<a class="mono" href="{% url 'agency:order' e.order.reference %}">{{ e.order.reference }}</a>{% endif %}<div class="small muted">{{ e.get_kind_display }}</div></td>
     <td class="r num">{{ e.gross_amount|money }}</td><td class="r num strong">{{ e.agency_amount|money }}</td><td>{% include "agencies/_payout.html" with s=e.payout_status label=e.get_payout_status_display %}</td></tr>
-  {% empty %}<tr><td colspan="6" class="empty">No sales yet. <a href="{% url 'agency:listing_add' %}">Publish your first listing →</a></td></tr>{% endfor %}</tbody></table></div>
+  {% empty %}<tr><td colspan="6" class="empty">No sales yet. <a href="{% url 'agency:listing_add' %}">Publish your first product →</a></td></tr>{% endfor %}</tbody></table></div>
 </div>
 <div class="grid g-4 mt">
   <a class="card" href="{% url 'agency:listing_add' %}"><b>1 · List what you sell</b><div class="small muted">Photos, specs, price and stock – cars, homes, plots or e-bikes.</div></a>

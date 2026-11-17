@@ -92,3 +92,23 @@ def version_tuple(v: str) -> tuple:
     while len(out) < 3:
         out.append(0)
     return tuple(out)
+
+
+class Translation(models.Model):
+    """
+    Machine translation cache: one row per (text, language). Content-addressed by a hash of the source text, so a
+    product title edited later simply gets a new translation and nothing goes stale.
+    """
+
+    source_hash = models.CharField(max_length=40)
+    lang = models.CharField(max_length=5)
+    source = models.TextField()
+    text = models.TextField()
+    provider = models.CharField(max_length=20, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["source_hash", "lang"], name="uniq_translation")]
+
+    def __str__(self):
+        return f"[{self.lang}] {self.source[:40]}"
