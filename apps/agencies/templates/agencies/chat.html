@@ -1,0 +1,7 @@
+{% extends "agencies/base.html" %}{% load console_tags %}
+{% block title %}{{ c.buyer.full_name }} · Messages{% endblock %}{% block heading %}{{ c.buyer.full_name }}{% endblock %}
+{% block crumbs %}<a href="{% url 'agency:chats' %}">Messages</a>{% if c.listing %} / <a href="{% url 'agency:listing' c.listing_id %}">{{ c.listing.title }}</a>{% endif %}{% if c.order %} / <a class="mono" href="{% url 'agency:order' c.order.reference %}">{{ c.order.reference }}</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="note-box" style="margin-bottom:12px">🔒 Keep everything in Nebret: phone numbers, emails and outside bank accounts are hidden automatically. Buyers only pay into your approved account shown on their order.</div>
+{% include "chat/_thread.html" with placeholder="Write to the buyer… (Enter to send, Shift+Enter for a new line)" %}
+{% endblock %}

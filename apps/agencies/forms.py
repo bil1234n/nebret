@@ -20,8 +20,8 @@ class AgencyForm(StyledMixin, forms.ModelForm):
     Console: create / edit a partner company. On create, the owner's account is set up too.
 
     The bank account entered here is the one buyers pay into (bank transfer, verified with ShegerPay and confirmed by
-    the company). It is saved as an approved :class:`PartnerBankAccount`; on edit, filling it in replaces the current
-    account after the cooling-off period.
+    the company). It is saved as an approved :class:`PartnerBankAccount` and used at once (Nebret entered it from the
+    company's documents); on edit, filling it in replaces the current account straight away.
     """
 
     owner_name = forms.CharField(label="Owner full name", max_length=150, required=False)
@@ -86,7 +86,7 @@ class AgencyForm(StyledMixin, forms.ModelForm):
                 c = self.current_account
                 pay_help += (f" Current account: {dict(Bank.choices).get(c.bank, c.bank)}"
                              f" · {c.account_name} · {c.account_number} ({c.currency}). Fill these in only to "
-                             f"replace it – the new account is used after the cooling-off period.")
+                             f"replace it – buyers pay into the new one straight away and the old one is switched off.")
             else:
                 pay_help += " This company has no approved account yet, so its listings can't take orders."
         else:

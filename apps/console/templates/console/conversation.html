@@ -5,12 +5,9 @@
 {% block content %}
 <div class="grid g-21">
 <div class="card"><div class="card-h"><h2>Messages</h2>{% if not c.support_joined and c.agency %}<form method="post">{% csrf_token %}<button class="btn sm" name="action" value="join">Join conversation (both sides see it)</button></form>{% endif %}</div>
-  {% if not readable %}<div class="empty">Join the conversation to read it. It is not reported, flagged or disputed.</div>{% else %}
-  {% for m in msgs %}<div class="note-box" style="margin:6px 0;{% if m.role == 'BUYER' %}background:#fff{% endif %}"><div class="small muted">{{ m.sender }} · {{ m.created_at|date:"d M H:i" }}{% if m.edited %} · edited{% endif %}{% if m.deleted %} · deleted{% endif %}</div>
-    {% if m.card.type %}<div class="small"><b>{{ m.card.type }}</b>{% if m.card.preferred_date %} · {{ m.card.preferred_date }}{% endif %}{% if m.card.order %} · {{ m.card.order }}{% endif %}</div>{% endif %}
-    <div>{{ m.text|linebreaksbr }}</div>{% if m.original_text %}<div class="small" style="color:var(--red)">Original (hidden from them): {{ m.original_text }}</div>{% endif %}
-    {% for a in m.attachments %}<a class="small" href="{{ a.url }}" target="_blank">📎 {{ a.name|default:"attachment" }}</a> {% endfor %}</div>{% endfor %}
-  <form method="post" class="toolbar mt">{% csrf_token %}<input class="grow" type="text" name="text" placeholder="Message as Nebret support"><button class="btn sm" name="action" value="send">Send</button></form>{% endif %}
+  {% if not readable %}<div class="empty">Join the conversation to read it. It is not reported, flagged or disputed.
+    <form method="post" style="margin-top:10px">{% csrf_token %}<button class="btn" name="action" value="join">Join and read</button></form></div>
+  {% else %}{% include "chat/_thread.html" %}{% endif %}
   <form method="post" class="toolbar mt">{% csrf_token %}{% if c.status == 'OPEN' %}<button class="btn ghost sm" name="action" value="close">Close</button><button class="btn ghost sm" name="action" value="block">Block</button>{% else %}<button class="btn ghost sm" name="action" value="reopen">Reopen</button>{% endif %}</form>
 </div>
 <div>

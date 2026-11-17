@@ -95,6 +95,22 @@ def _equb_cash(a):
             "recent": cash["payments"].select_related("membership__group", "user", "recorded_by").order_by("-created_at")[:10]}
 
 
+def _company_chats(agency, request) -> list[dict]:
+    """The company's buyer conversations, newest first – waiting ones flagged – for the company page."""
+    from apps.chat import services as chat
+    from apps.chat.models import Conversation, Message
+
+    out = []
+    for c in (Conversation.objects.filter(agency=agency).select_related("buyer", "listing", "order")
+              .order_by("-last_message_at", "-id")[:15]):
+        last = c.messages.filter(deleted_at__isnull=True).order_by("-created_at", "-id").first()
+        readable = chat.staff_may_read(c)
+        out.append({"c": c, "last": last, "readable": readable,
+                    "waiting": bool(last and last.sender_role == Message.Role.BUYER),
+                    "count": c.messages.count()})
+    return out
+
+
 @staff_required
 def agency_detail(request, pk):
     a = get_object_or_404(Agency, pk=pk)
@@ -138,4 +154,4 @@ def agency_detail(request, pk):
         "staff": a.staff.select_related("user"), "customers": a.customers.select_related("user")[:15],
         "n_customers": a.customers.count(), "equb_cash": _equb_cash(a), "staff_form": StaffForm(), "statuses": Agency.Status.choices,
         "bank_accounts": a.bank_accounts.exclude(status="RETIRED").order_by("-created_at")[:5],
-        "commission_account": commission_account(), "banks": dict(Bank.choices)})
+        "commission_account": commission_account(), "banks": dict(Bank.choices), "chats": _company_chats(a, request)})

@@ -17,6 +17,7 @@
       <dt>Bank</dt><dd>{{ banks|get_item:acc.bank|default:acc.bank }} {% if acc.is_usable %}<span class="badge b-green">In use</span>{% else %}{{ acc.status|status_badge:acc.get_status_display }}{% if acc.status == "APPROVED" and acc.usable_from %} <span class="small muted">from {{ acc.usable_from|date:"d M H:i" }}</span>{% endif %}{% endif %}</dd>
       <dt>Account holder</dt><dd>{{ acc.account_name }}</dd>
       <dt>Account number</dt><dd class="mono">{{ acc.account_number }} · {{ acc.currency }}</dd></dl>
+    {% if acc.status == "APPROVED" and not acc.is_usable %}<form method="post" action="{% url 'console:bank_accounts' %}?status=APPROVED" class="toolbar" style="margin:6px 0 0">{% csrf_token %}<input type="hidden" name="account" value="{{ acc.pk }}"><input type="hidden" name="note" value="Started from the company page"><input type="hidden" name="next" value="{% url 'console:agency' a.pk %}"><span class="small muted grow">Starts automatically {{ acc.usable_from|date:"d M H:i" }}.</span><button class="btn sm" name="action" value="use_now">Use now</button></form>{% endif %}
     {% empty %}
     <p class="small muted">No bank account yet, so this company's listings can't be published or take orders. <a href="{% url 'console:agency_edit' a.pk %}">Add it</a>.</p>
     {% endfor %}
@@ -35,6 +36,33 @@
     {% if a.notes %}<p class="small" style="white-space:pre-line">{{ a.notes }}</p>{% endif %}
   </div>
 </div>
+
+<div class="card mt" id="chats"><div class="card-h"><h2>Chats with buyers</h2><span class="small muted">{% with n=chats|length %}{{ n }} recent{% endwith %} · <a href="{% url 'console:conversations' %}?tab=all&q={{ a.name|urlencode }}">All →</a></span></div>
+  {% for x in chats %}{% with c=x.c %}
+  <div class="cc-row{% if x.waiting %} waiting{% endif %}">
+    <div class="cc-head">
+      <div class="cc-avatar">{{ c.buyer.full_name|slice:":1"|upper }}</div>
+      <div style="flex:1;min-width:0">
+        <div><b>{{ c.buyer.full_name }}</b>{% if c.listing %} <span class="muted small">· {{ c.listing.title|truncatechars:42 }}</span>{% endif %}{% if c.order %} <span class="mono small">· {{ c.order.reference }}</span>{% endif %}</div>
+        <div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          {% if x.readable and x.last %}<b>{{ x.last.sender_label }}:</b> {{ x.last.text|default:"📎 attachment"|truncatechars:110 }}{% elif x.last %}Private between buyer and company – reply or open to join and read{% else %}No messages yet{% endif %}</div>
+      </div>
+      <div class="r" style="flex-shrink:0">
+        {% if x.waiting %}<span class="badge b-gold">Waiting for reply</span>{% elif c.status != 'OPEN' %}{{ c.status|status_badge:c.get_status_display }}{% endif %}
+        <div class="small muted">{{ c.last_message_at|date:"d M H:i" }} · {{ x.count }} msg{{ x.count|pluralize }}</div></div>
+      <a class="btn ghost sm" href="{% url 'console:conversation' c.pk %}">Open chat →</a>
+    </div>
+    {% if c.status == 'OPEN' %}
+    <form method="post" action="{% url 'console:conversation' c.pk %}" class="cc-reply">{% csrf_token %}
+      <input type="hidden" name="action" value="send"><input type="hidden" name="next" value="{% url 'console:agency' a.pk %}#chats">
+      <input type="text" name="text" placeholder="Quick reply as Nebret support{% if not c.support_joined %} (joins the chat – both sides see it){% endif %}…" required>
+      <button class="btn sm">Send</button></form>{% endif %}
+  </div>{% endwith %}
+  {% empty %}<div class="empty">No buyer has messaged {{ a.name }} yet.</div>{% endfor %}
+</div>
+<style>.cc-row{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0}.cc-row.waiting{border-color:#C9A227;background:#FFFCF2}
+.cc-head{display:flex;align-items:center;gap:12px}.cc-avatar{width:36px;height:36px;border-radius:18px;background:#EEF4F1;color:#0F382B;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.cc-reply{display:flex;gap:8px;margin-top:10px}.cc-reply input{flex:1}</style>
 
 <div class="grid g-2 mt">
   <div class="card"><div class="card-h"><h2>Listings</h2><a class="small" href="{% url 'console:listings' %}?company={{ a.pk }}">All →</a></div>

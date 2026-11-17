@@ -1,11 +1,11 @@
 {% extends "console/base.html" %}{% load console_tags %}
 {% block title %}Partner bank accounts{% endblock %}{% block heading %}Partner bank accounts{% endblock %}
-{% block crumbs %}Buyers pay straight into these accounts. Only the company owner can submit one; approve it after checking it with the bank. It becomes usable after the cooling-off period.{% endblock %}
+{% block crumbs %}Buyers pay straight into these accounts. Only the company owner can submit one; approve it after checking it with the bank. An owner's change waits 24 hours (protection against a stolen login) unless you start it sooner; accounts Nebret enters itself are used at once.{% endblock %}
 {% block content %}
 <div class="chips" style="margin-bottom:12px"><a class="chip {% if not status %}on{% endif %}" href="?status=">All</a>
   {% for v, l in statuses %}<a class="chip {% if status == v %}on{% endif %}" href="?status={{ v }}">{{ l }}{% if v == 'PENDING' %} <b>{{ pending }}</b>{% endif %}</a>{% endfor %}</div>
 {% for a in page %}
-<div class="card mt"><div class="card-h"><h2><a href="{% url 'console:agency' a.agency_id %}">{{ a.agency.name }}</a> · {{ a.bank }} <span class="mono">{{ a.account_number }}</span> · {{ a.currency }}</h2>{{ a.status|status_badge:a.get_status_display }}</div>
+<div class="card mt"><div class="card-h"><h2><a href="{% url 'console:agency' a.agency_id %}">{{ a.agency.name }}</a> · {{ a.bank }} <span class="mono">{{ a.account_number }}</span> · {{ a.currency }}</h2><span>{% if a.status == 'APPROVED' %}{% if a.is_usable %}<span class="badge b-green">In use – buyers pay here</span>{% else %}<span class="badge b-gold">Waiting – starts {{ a.usable_from|date:"d M H:i" }}</span>{% endif %}{% else %}{{ a.status|status_badge:a.get_status_display }}{% endif %}</span></div>
   <dl class="kv"><dt>Account name</dt><dd>{{ a.account_name }}</dd>{% if a.branch %}<dt>Branch</dt><dd>{{ a.branch }}</dd>{% endif %}{% if a.swift_code %}<dt>SWIFT</dt><dd class="mono">{{ a.swift_code }}</dd>{% endif %}
     <dt>Submitted</dt><dd>{{ a.created_at|date:"d M Y H:i" }} by {{ a.created_by.full_name|default:"—" }}</dd>
     {% if a.replaces %}<dt>Replaces</dt><dd>{{ a.replaces }}</dd>{% endif %}
@@ -14,9 +14,13 @@
   <div class="small muted">History: {% for e in a.events.all|slice:":8" %}{{ e.created_at|date:"d M H:i" }} {{ e.action }}{% if e.by %} ({{ e.by.full_name }}){% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
   {% if a.status == 'PENDING' %}<form method="post" class="toolbar mt" style="margin-bottom:0">{% csrf_token %}<input type="hidden" name="account" value="{{ a.pk }}">
     <input class="grow" type="text" name="note" placeholder="How it was checked (approve) / reason (reject)">
-    <button class="btn sm" name="action" value="approve">Approve</button>
+    <button class="btn sm" name="action" value="approve">Approve (24 h waiting)</button>
+    <button class="btn sm" name="action" value="approve" onclick="this.form.now.value='1'" title="Only after confirming the change with the company owner by phone or in person">Approve &amp; use now</button><input type="hidden" name="now">
     <button class="btn ghost sm" name="action" value="reject" onclick="this.form.reason.value=this.form.note.value">Reject</button><input type="hidden" name="reason"></form>
-  {% elif a.status == 'APPROVED' %}<form method="post" class="toolbar mt" style="margin-bottom:0">{% csrf_token %}<input type="hidden" name="account" value="{{ a.pk }}"><input class="grow" type="text" name="note" placeholder="Why it is switched off"><button class="btn ghost sm" name="action" value="retire">Switch off</button></form>{% endif %}
+  {% elif a.status == 'APPROVED' %}
+  {% if not a.is_usable %}<div class="note-box mt">Buyers can't pay into this account until <b>{{ a.usable_from|date:"d M Y H:i" }}</b>{% if a.replaces and a.replaces.status == 'APPROVED' %}; until then they pay into {{ a.replaces.bank }} {{ a.replaces.masked_number }}{% endif %}. If you have confirmed the change with the company owner, start it now.
+    <form method="post" class="toolbar" style="margin:8px 0 0">{% csrf_token %}<input type="hidden" name="account" value="{{ a.pk }}"><input class="grow" type="text" name="note" placeholder="How the change was confirmed (e.g. called the owner)"><button class="btn sm" name="action" value="use_now">Use this account now</button></form></div>{% endif %}
+  <form method="post" class="toolbar mt" style="margin-bottom:0">{% csrf_token %}<input type="hidden" name="account" value="{{ a.pk }}"><input class="grow" type="text" name="note" placeholder="Why it is switched off"><button class="btn ghost sm" name="action" value="retire">Switch off</button></form>{% endif %}
 </div>
 {% empty %}<div class="card"><div class="empty">No accounts here.</div></div>{% endfor %}
 {% include "console/_pagination.html" %}

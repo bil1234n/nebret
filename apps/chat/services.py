@@ -100,6 +100,8 @@ def for_listing(buyer, listing) -> Conversation:
         raise BusinessRuleError("You can't open a chat with your own company.")
     conv = Conversation.objects.filter(kind=C.Kind.SELLER, buyer=buyer, listing=listing).first()
     if conv:
+        if conv.agency_id != listing.company_id:
+            move_to_seller(conv, listing)
         return conv
     try:
         with transaction.atomic():
@@ -107,6 +109,46 @@ def for_listing(buyer, listing) -> Conversation:
                                                agency_id=listing.company_id)
     except IntegrityError:
         return Conversation.objects.get(kind=C.Kind.SELLER, buyer=buyer, listing=listing)
+
+
+def move_to_seller(conv: Conversation, listing) -> Conversation:
+    """
+    The listing changed hands: the buyer's chat continues with the listing's current seller. The old seller no longer
+    sees it or gets its notifications; a note in the chat tells both sides.
+    """
+    if conv.agency_id == listing.company_id:
+        return conv
+    Conversation.objects.filter(pk=conv.pk).update(agency_id=listing.company_id, first_agency_reply_at=None,
+                                                   updated_at=timezone.now())
+    conv.agency_id = listing.company_id
+    conv.agency = listing.company
+    seller = listing.company.name if listing.company_id else "Nebret"
+    post_card(conv, "SELLER_CHANGED", {"seller": seller},
+              f"{listing.title} is now sold by {seller}. This chat continues with them.")
+    return conv
+
+
+def listing_seller_changed(listing) -> int:
+    """Move every open buyer chat about ``listing`` to its current seller. Returns how many moved."""
+    n = 0
+    for conv in (Conversation.objects.filter(kind=C.Kind.SELLER, listing=listing, status=C.Status.OPEN)
+                 .exclude(agency_id=listing.company_id) if listing.company_id else
+                 Conversation.objects.filter(kind=C.Kind.SELLER, listing=listing, status=C.Status.OPEN,
+                                             agency__isnull=False)):
+        move_to_seller(conv, listing)
+        n += 1
+    return n
+
+
+def _listing_pre_save(sender, instance, **kwargs):
+    if instance.pk:
+        instance._old_company_id = (sender.objects.filter(pk=instance.pk).values_list("company_id", flat=True).first())
+
+
+def _listing_post_save(sender, instance, created, **kwargs):
+    old = getattr(instance, "_old_company_id", None)
+    if not created and old != instance.company_id:
+        transaction.on_commit(lambda: listing_seller_changed(instance))
 
 
 def for_order(order) -> Conversation:

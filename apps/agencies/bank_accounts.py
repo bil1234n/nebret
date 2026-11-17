@@ -115,10 +115,8 @@ def add_account_by_staff(agency: Agency, staff, *, bank: str, account_name: str,
     _event(acc, "SUBMITTED", staff, note or "Entered by Nebret staff", replaces=current.pk if current else None,
            bank=acc.bank, number=acc.masked_number, currency=acc.currency)
     approve_account(acc, staff, note or "Entered by Nebret staff from the company's documents")
-    if not agency.bank_accounts.filter(status=A.APPROVED).exclude(pk=acc.pk).exists():
-        PartnerBankAccount.objects.filter(pk=acc.pk).update(usable_from=timezone.now())
-    acc.refresh_from_db()
-    return acc
+    # Nebret checked it against the company's documents itself, so there is no cooling-off: buyers pay into it now.
+    return make_usable_now(acc, staff, "Entered and checked by Nebret staff – no waiting period")
 
 
 @transaction.atomic
@@ -161,13 +159,64 @@ def reject_account(account: PartnerBankAccount, staff, reason: str) -> PartnerBa
     return account
 
 
+def _retire_replaced(account: PartnerBankAccount, by, note: str):
+    old = account.replaces
+    if old and old.status == A.APPROVED:
+        old.status, old.is_active = A.RETIRED, False
+        old.save(update_fields=["status", "is_active", "updated_at"])
+        _event(old, "RETIRED", by, note)
+
+
+@transaction.atomic
+def make_usable_now(account: PartnerBankAccount, staff, note: str = "") -> PartnerBankAccount:
+    """
+    Nebret staff end the cooling-off early (after confirming the change with the company by phone / in person):
+    buyers are told to pay into this account from now on and the account it replaces is switched off.
+    """
+    if not getattr(staff, "is_staff", False):
+        raise BusinessRuleError("Only Nebret staff can end the waiting period.")
+    account = (PartnerBankAccount.objects.select_for_update(of=("self",)).select_related("replaces", "agency")
+               .get(pk=account.pk))
+    if account.status != A.APPROVED:
+        raise BusinessRuleError("Approve the account first.")
+    now = timezone.now()
+    if account.usable_from is None or account.usable_from > now:
+        account.usable_from = now
+        account.save(update_fields=["usable_from", "updated_at"])
+        _event(account, "USABLE_NOW", staff, note or "Waiting period ended early by Nebret")
+    _retire_replaced(account, staff, f"Replaced by {account.masked_number}")
+    _notify_change(account, "Bank account in use",
+                   f"{account.agency.name}: buyers now pay into {account.bank} {account.masked_number}.")
+    return account
+
+
 @transaction.atomic
 def retire_account(account: PartnerBankAccount, by, note: str = "") -> PartnerBankAccount:
-    """Switch an account off (owner or Nebret staff). Orders already placed keep their frozen account details."""
+    """
+    Switch an account off (owner or Nebret staff). Orders already placed keep their frozen account details.
+
+    Never leaves a company without an account buyers can pay into by accident: when Nebret switches off the account a
+    waiting replacement replaces, the replacement goes into use at once; an owner can't switch off the last usable one.
+    """
     owner = account.agency.staff.filter(user=by, is_active=True, role=AgencyStaff.Role.OWNER).exists()
-    if not (owner or getattr(by, "is_staff", False)):
+    staff = getattr(by, "is_staff", False)
+    if not (owner or staff):
         raise BusinessRuleError("Only the company owner or Nebret can switch off a bank account.")
     account = PartnerBankAccount.objects.select_for_update().get(pk=account.pk)
+    if account.status == A.RETIRED:
+        return account
+    others = usable_accounts(account.agency, account.currency).exclude(pk=account.pk)
+    waiting = (PartnerBankAccount.objects.filter(agency=account.agency, currency=account.currency, status=A.APPROVED,
+                                                 usable_from__gt=timezone.now()).exclude(pk=account.pk)
+               .order_by("usable_from").first())
+    if account.is_usable and not others.exists():
+        if waiting and staff:
+            make_usable_now(waiting, by, "Old account switched off by Nebret – replacement used at once")
+        elif waiting:
+            raise BusinessRuleError(
+                f"This is the only account buyers can pay into until {timezone.localtime(waiting.usable_from):%d %b %H:%M}"
+                f", when {waiting.masked_number} takes over automatically. Ask Nebret to start it sooner.")
+    account.refresh_from_db()
     if account.status == A.RETIRED:
         return account
     account.status, account.is_active = A.RETIRED, False

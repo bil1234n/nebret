@@ -1,0 +1,112 @@
+{# Shared chat thread. Context: msgs, staff_view, can_send, poll_url, send_url, placeholder, csrf #}
+<div class="ct" id="ct" data-poll="{{ poll_url }}" data-send="{{ send_url }}">
+  <div class="ct-scroll" id="ct-scroll"><div id="ct-list">{% include "chat/_messages.html" %}</div></div>
+  {% if can_send %}
+  <form class="ct-composer" id="ct-form" method="post" action="{{ send_url }}" enctype="multipart/form-data">{% csrf_token %}
+    <input type="hidden" name="action" value="send">
+    <div class="ct-emoji-pop" id="ct-emoji" hidden></div>
+    <div class="ct-files" id="ct-files"></div>
+    <button type="button" class="ct-icon" id="ct-emoji-btn" title="Emoji" aria-label="Emoji">😊</button>
+    <label class="ct-icon" title="Attach photo or PDF" aria-label="Attach"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      <input type="file" name="files" id="ct-file" accept="image/jpeg,image/png,application/pdf" multiple hidden></label>
+    <textarea name="text" id="ct-text" rows="1" placeholder="{{ placeholder|default:'Write a message… (Enter to send, Shift+Enter for a new line)' }}"></textarea>
+    <button class="ct-send" type="submit" id="ct-send" aria-label="Send"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 20.5 21 12 3 3.5 3 10l12 2-12 2z"/></svg></button>
+  </form>
+  <div class="ct-error" id="ct-error" hidden></div>
+  {% endif %}
+</div>
+<style>
+.ct{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#F6F8F7}
+.ct-scroll{height:460px;overflow-y:auto;padding:14px 16px}
+.ct-day{text-align:center;margin:14px 0 8px}.ct-day span{font-size:12px;color:#6b7c75;background:#fff;border:1px solid var(--line);padding:3px 12px;border-radius:99px}
+.ct-row{display:flex;flex-direction:column;align-items:flex-start;margin:6px 0}.ct-row.mine{align-items:flex-end}
+.ct-bubble{max-width:72%;background:#fff;border:1px solid var(--line);border-radius:16px 16px 16px 6px;padding:8px 12px 6px;box-shadow:0 1px 2px rgba(15,56,43,.05)}
+.ct-bubble.mine{background:#0F382B;color:#fff;border-color:#0F382B;border-radius:16px 16px 6px 16px}
+.ct-bubble.nebret{border:1.5px solid #C9A227}
+.ct-sender{font-size:12px;font-weight:700;color:#6b7c75;margin-bottom:2px}
+.ct-text{white-space:normal;word-wrap:break-word;line-height:1.45}
+.ct-meta{display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:11px;opacity:.7;margin-top:3px}
+.ct-copy{background:none;border:0;padding:2px;cursor:pointer;color:inherit;opacity:.8;display:inline-flex}.ct-copy:hover{opacity:1}
+.ct-copy.done{color:#2e9e5b;opacity:1}
+.ct-img{display:block;max-width:240px;max-height:240px;border-radius:10px;margin:2px 0 6px}
+.ct-file{display:block;margin:2px 0 6px;color:inherit}
+.ct-orig{font-size:12px;color:#B3261E;margin-top:4px}
+.ct-masked{font-size:12px;color:#8A6D0B;background:#FBF6E6;border-radius:8px;padding:3px 8px;margin-top:4px;max-width:72%}
+.ct-card{margin:10px auto;max-width:86%;background:#fff;border:1px solid var(--line);border-left:4px solid #C9A227;border-radius:12px;padding:10px 14px}
+.ct-note{text-align:center;font-size:12px;color:#4d5f58;background:#EBF0EE;border-radius:99px;padding:5px 14px;margin:8px auto;width:fit-content;max-width:90%}
+.ct-card-t{font-weight:700;font-size:13px;margin-bottom:2px}
+.ct-empty{text-align:center;color:#6b7c75;padding:60px 0}
+.ct-composer{position:relative;display:flex;align-items:flex-end;gap:8px;padding:12px;background:#fff;border-top:1px solid var(--line)}
+.ct-composer textarea{flex:1;resize:none;min-height:44px;max-height:160px;border-radius:22px;padding:11px 16px;border:1px solid var(--line);font:inherit;line-height:1.4}
+.ct-icon{width:44px;height:44px;border-radius:22px;border:0;background:#EEF4F1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;color:#0F382B;flex-shrink:0}
+.ct-send{width:44px;height:44px;border-radius:22px;border:0;background:#0F382B;color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.ct-send:disabled{opacity:.5;cursor:default}
+.ct-emoji-pop{position:absolute;bottom:68px;left:12px;width:320px;max-height:240px;overflow-y:auto;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:8px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;z-index:5}
+.ct-emoji-pop[hidden]{display:none}
+.ct-emoji-pop button{border:0;background:none;font-size:22px;cursor:pointer;border-radius:8px;padding:4px}.ct-emoji-pop button:hover{background:#EEF4F1}
+.ct-files{position:absolute;bottom:68px;right:12px;display:flex;gap:6px;flex-wrap:wrap}
+.ct-files span{font-size:12px;background:#EEF4F1;border-radius:99px;padding:4px 10px}
+.ct-error{color:#B3261E;font-size:13px;padding:0 14px 10px;background:#fff}
+</style>
+<script>
+(function () {
+  var box = document.getElementById('ct'); if (!box) return;
+  var scroll = document.getElementById('ct-scroll'), list = document.getElementById('ct-list');
+  var form = document.getElementById('ct-form'), text = document.getElementById('ct-text');
+  var EMOJI = '😀 😂 😊 😍 🙏 👍 👌 👏 🙌 🤝 💪 🎉 ❤️ 💚 🔥 ⭐ ✅ ❌ ❓ 🤔 😅 😢 😮 😎 👋 🏠 🚗 🚚 🔑 📄 📷 💰 💵 🏦 📅 ⏰ 📍 ☎️ ✉️ 🛡️'.split(' ');
+  var atBottom = function () { return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60; };
+  var toBottom = function () { scroll.scrollTop = scroll.scrollHeight; };
+  toBottom();
+  function wireCopy(root) {
+    root.querySelectorAll('.ct-copy').forEach(function (b) {
+      b.onclick = function () {
+        var done = function () { b.classList.add('done'); setTimeout(function () { b.classList.remove('done'); }, 1200); };
+        if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy).then(done, done);
+        else { var t = document.createElement('textarea'); t.value = b.dataset.copy; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); done(); }
+      };
+    });
+  }
+  wireCopy(list);
+  var last = list.innerHTML;
+  function refresh(force) {
+    if (!box.dataset.poll) return;
+    fetch(box.dataset.poll, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (html === null || (html === last && !force)) return;
+        var stick = atBottom() || force; last = html; list.innerHTML = html; wireCopy(list); if (stick) toBottom();
+      }).catch(function () {});
+  }
+  setInterval(function () { if (!document.hidden) refresh(false); }, 4000);
+  if (!form) return;
+  var pop = document.getElementById('ct-emoji'), files = document.getElementById('ct-file'), chips = document.getElementById('ct-files');
+  var err = document.getElementById('ct-error'), send = document.getElementById('ct-send');
+  EMOJI.forEach(function (e) {
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = e;
+    b.onclick = function () {
+      var s = text.selectionStart || text.value.length, en = text.selectionEnd || s;
+      text.value = text.value.slice(0, s) + e + text.value.slice(en); text.focus(); text.selectionStart = text.selectionEnd = s + e.length;
+    };
+    pop.appendChild(b);
+  });
+  document.getElementById('ct-emoji-btn').onclick = function () { pop.hidden = !pop.hidden; };
+  document.addEventListener('click', function (e) { if (!pop.hidden && !pop.contains(e.target) && e.target.id !== 'ct-emoji-btn') pop.hidden = true; });
+  files.onchange = function () { chips.innerHTML = ''; Array.prototype.forEach.call(files.files, function (f) { var s = document.createElement('span'); s.textContent = '📎 ' + f.name; chips.appendChild(s); }); };
+  var grow = function () { text.style.height = 'auto'; text.style.height = Math.min(text.scrollHeight, 160) + 'px'; };
+  text.addEventListener('input', grow);
+  text.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit ? form.requestSubmit() : form.submit(); } });
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!text.value.trim() && !files.files.length) return;
+    send.disabled = true; err.hidden = true;
+    fetch(box.dataset.send, { method: 'POST', body: new FormData(form), headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+      .then(function (r) { return r.json().catch(function () { return { ok: r.ok }; }); })
+      .then(function (d) {
+        if (d && d.ok) { text.value = ''; files.value = ''; chips.innerHTML = ''; pop.hidden = true; grow(); refresh(true); }
+        else { err.textContent = (d && d.error) || 'Could not send. Try again.'; err.hidden = false; }
+      })
+      .catch(function () { err.textContent = 'Could not send – check the connection.'; err.hidden = false; })
+      .finally(function () { send.disabled = false; text.focus(); });
+  });
+})();
+</script>

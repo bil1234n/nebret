@@ -1,0 +1,24 @@
+{% for m in msgs %}
+{% if m.new_day %}<div class="ct-day"><span>{{ m.created_at|date:"D d M Y" }}</span></div>{% endif %}
+{% if m.kind == 'CARD' or m.role == 'SYSTEM' %}{% if m.card.type != 'ORDER_PLACED' and m.card.type != 'PAYMENT_CONFIRMED' and m.card.type != 'VIEWING_REQUEST' and m.card.type != 'TEST_DRIVE_REQUEST' and m.card.type != 'ORDER_PROOF_REJECTED' and m.card.type != 'ORDER_HANDED_OVER' %}
+<div class="ct-note">{% if m.card.order %}Order <span class="mono">{{ m.card.order }}</span> · {{ m.card.status_label|default:m.text }}{% else %}{{ m.text }}{% endif %} <span class="muted">{{ m.created_at|date:"H:i" }}</span></div>{% else %}
+<div class="ct-card"><div class="ct-card-t">{% if m.card.type %}{{ m.card.kind_label|default:m.card.type }}{% else %}Update{% endif %}{% if m.card.order %} · <span class="mono">{{ m.card.order }}</span>{% endif %}</div>
+  {% if m.text %}<div>{{ m.text|linebreaksbr }}</div>{% endif %}
+  {% if m.card.preferred_date %}<div class="small">Preferred date: <b>{{ m.card.preferred_date }}</b></div>{% endif %}
+  <div class="ct-meta">{{ m.created_at|date:"H:i" }}</div></div>{% endif %}
+{% else %}
+<div class="ct-row {% if m.mine %}mine{% endif %}" data-id="{{ m.id }}">
+  <div class="ct-bubble {% if m.mine %}mine{% elif m.role == 'NEBRET' %}nebret{% endif %}">
+    {% if not m.mine %}<div class="ct-sender">{{ m.sender }}</div>{% endif %}
+    {% if m.deleted %}<i class="muted">This message was removed</i>{% else %}
+      {% for a in m.attachments %}{% if 'image/' in a.content_type %}<a href="{{ a.url }}" target="_blank" rel="noopener"><img class="ct-img" src="{{ a.url }}" alt=""></a>{% else %}<a class="ct-file" href="{{ a.url }}" target="_blank" rel="noopener">📄 {{ a.name|default:"Attachment" }}</a>{% endif %}{% endfor %}
+      {% if m.text %}<div class="ct-text">{{ m.text|linebreaksbr }}</div>{% endif %}
+      {% if staff_view and m.original_text %}<div class="ct-orig">Hidden from them: {{ m.original_text }}</div>{% endif %}
+    {% endif %}
+    <div class="ct-meta">{% if m.edited %}edited · {% endif %}{{ m.created_at|date:"H:i" }}
+      {% if m.text and not m.deleted %}<button type="button" class="ct-copy" data-copy="{{ m.text }}" title="Copy" aria-label="Copy message"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>{% endif %}</div>
+  </div>
+  {% if m.masked and m.notice %}<div class="ct-masked">🛡 {{ m.notice }}</div>{% endif %}
+</div>
+{% endif %}
+{% empty %}<div class="ct-empty">No messages yet. Say hello 👋</div>{% endfor %}

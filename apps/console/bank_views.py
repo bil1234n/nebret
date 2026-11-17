@@ -17,7 +17,8 @@ from decimal import Decimal
 from datetime import timedelta
 
 from django.contrib import messages
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q, Sum
+from django.http import HttpResponse
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, OuterRef, Q, Subquery, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -26,6 +27,7 @@ from django.utils.dateparse import parse_date
 from apps.agencies import bank_accounts as ba
 from apps.agencies.models import Agency, AgencyLedgerEntry, PartnerBankAccount
 from apps.chat import services as chat
+from apps.chat import web as chat_web
 from apps.chat.models import Conversation, Message, Report, Restriction, Violation
 from apps.core import private_files
 from apps.core.exceptions import BusinessRuleError
@@ -126,15 +128,21 @@ def bank_accounts(request):
         acc = get_object_or_404(PartnerBankAccount, pk=request.POST.get("account") or 0)
         a = request.POST.get("action")
         if a == "approve":
-            _do(request, lambda: ba.approve_account(acc, request.user, request.POST.get("note", "")),
-                "Approved – usable after the cooling-off period.")
+            _do(request, lambda: (ba.make_usable_now(ba.approve_account(acc, request.user, request.POST.get("note", "")),
+                                                      request.user, "Approved and put into use at once")
+                                  if request.POST.get("now") else ba.approve_account(acc, request.user, request.POST.get("note", ""))),
+                "Approved – in use now." if request.POST.get("now") else "Approved – usable after the waiting period.")
         elif a == "reject":
             _do(request, lambda: ba.reject_account(acc, request.user, request.POST.get("reason", "")), "Rejected.")
+        elif a == "use_now":
+            _do(request, lambda: ba.make_usable_now(acc, request.user, request.POST.get("note", "")),
+                "Done – buyers pay into this account from now on.")
         elif a == "retire":
             _do(request, lambda: ba.retire_account(acc, request.user, request.POST.get("note", "")), "Switched off.")
-        return redirect(request.get_full_path())
+        nxt = request.POST.get("next", "")
+        return redirect(nxt if nxt.startswith("/console/") else request.get_full_path())
     status = request.GET.get("status", "PENDING")
-    qs = PartnerBankAccount.objects.select_related("agency", "created_by", "verified_by").prefetch_related("events")
+    qs = PartnerBankAccount.objects.select_related("agency", "created_by", "verified_by", "replaces").prefetch_related("events")
     if status:
         qs = qs.filter(status=status)
     return render(request, "console/bank_accounts.html", {
@@ -230,9 +238,15 @@ def listing_equb(request, pk):
 # =========================================================================== chat
 @staff_required
 def conversations(request):
-    tab, q = request.GET.get("tab", "flagged"), request.GET.get("q", "").strip()
-    qs = Conversation.objects.select_related("buyer", "agency", "listing", "order")
-    if tab == "flagged":
+    tab, q = request.GET.get("tab", "inbox"), request.GET.get("q", "").strip()
+    last_role = Subquery(Message.objects.filter(conversation=OuterRef("pk"), deleted_at__isnull=True)
+                         .order_by("-created_at", "-id").values("sender_role")[:1])
+    qs = Conversation.objects.select_related("buyer", "agency", "listing", "order").annotate(last_role=last_role)
+    staff_inbox = Q(kind=Conversation.Kind.SUPPORT) | Q(support_joined=True) | Q(agency__isnull=True)
+    needs_reply = qs.filter(staff_inbox, status="OPEN", last_role__in=["BUYER", "AGENCY"])
+    if tab == "inbox":
+        qs = needs_reply
+    elif tab == "flagged":
         qs = qs.filter(Q(messages__was_masked=True) | Q(reports__status=Report.Status.OPEN)).distinct()
     elif tab == "reported":
         qs = qs.filter(reports__status=Report.Status.OPEN).distinct()
@@ -249,7 +263,7 @@ def conversations(request):
                      .order_by("-n")[:10])
     return render(request, "console/conversations.html", {
         "nav": "chat", "page": page(request, qs.order_by("-last_message_at", "-id")), "tab": tab, "q": q,
-        "stats": stats, "violators": top_violators,
+        "stats": stats, "violators": top_violators, "inbox_count": needs_reply.count(),
         "open_reports": Report.objects.filter(status=Report.Status.OPEN).count()})
 
 
@@ -257,6 +271,13 @@ def conversations(request):
 def conversation(request, pk):
     conv = get_object_or_404(Conversation.objects.select_related("buyer", "agency", "listing", "order"), pk=pk)
     here = reverse("console:conversation", args=[pk])
+    if request.method == "GET" and chat_web.is_ajax(request):
+        if not chat.staff_may_read(conv):
+            return HttpResponse("")
+        return chat_web.render_messages(request, conv, staff_view=True)
+    if request.method == "POST" and request.POST.get("action") == "send":
+        nxt = request.POST.get("next", "")
+        return chat_web.send_from_web(request, conv, nxt if nxt.startswith("/console/") else here)
     if request.method == "POST":
         a, d = request.POST.get("action"), request.POST
         if a == "join":
@@ -281,11 +302,14 @@ def conversation(request, pk):
             conv.save(update_fields=["status", "updated_at"])
         return redirect(here)
     readable = chat.staff_may_read(conv)
-    msgs = [chat.message_row(m, request.user, request=request, staff_view=True)
-            for m in conv.messages.select_related("sender")] if readable else []
+    msgs = chat_web.thread_rows(conv, request.user, request, staff_view=True) if readable else []
+    if readable:
+        chat.mark_read(conv, request.user)
     people = [conv.buyer] + ([s.user for s in conv.agency.staff.select_related("user")] if conv.agency_id else [])
     restrictions = Restriction.objects.filter(user__in=people, lifted_at__isnull=True).select_related("user")
     return render(request, "console/conversation.html", {
-        "nav": "chat", "c": conv, "msgs": msgs, "readable": readable, "people": people,
+        "nav": "chat", "c": conv, "msgs": msgs, "readable": readable, "people": people, "staff_view": True,
+        "can_send": conv.status == "OPEN", "poll_url": here, "send_url": here,
+        "placeholder": "Reply as Nebret support… (Enter to send, Shift+Enter for a new line)",
         "restrictions": restrictions, "reports": conv.reports.select_related("reporter"),
         "violations": Violation.objects.filter(message__conversation=conv).select_related("user")[:50]})

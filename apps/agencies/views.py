@@ -346,12 +346,20 @@ def inquiries(request):
             from apps.notifications.models import Notification
             from apps.notifications.services import notify
 
+            from apps.chat import services as chat
+
             inq.reply, inq.status = reply[:2000], Inquiry.Status.ANSWERED
             inq.replied_by, inq.replied_at = request.user, timezone.now()
             inq.save()
-            notify(inq.user, Notification.Kind.ORDER, f"{request.agency.name} replied",
-                   f"About {inq.listing.title}: {reply[:300]}", {"listing": inq.listing.slug})
-            messages.success(request, "Reply sent to the customer.")
+            try:
+                # the buyer reads replies in the chat with the company (that is where the app shows them)
+                chat.post_message(chat.for_listing(inq.user, inq.listing), request.user, reply)
+            except BusinessRuleError as exc:
+                notify(inq.user, Notification.Kind.ORDER, f"{request.agency.name} replied",
+                       f"About {inq.listing.title}: {reply[:300]}", {"listing": inq.listing.slug})
+                messages.warning(request, f"Reply saved, but not posted in the chat: {exc.detail}")
+            else:
+                messages.success(request, "Reply sent – the customer sees it in their chat with you.")
         elif request.POST.get("action") == "close":
             inq.status = Inquiry.Status.CLOSED
             inq.save(update_fields=["status", "updated_at"])
@@ -360,6 +368,45 @@ def inquiries(request):
         qs = qs.filter(status=status)
     return render(request, "agencies/inquiries.html", _ctx(request, "inquiries", page=_page(request, qs), status=status,
                                                           statuses=Inquiry.Status.choices))
+
+
+# --------------------------------------------------------------------------- chat with buyers
+@agency_required()
+def chats(request):
+    from apps.chat import services as chat
+    from apps.chat.models import Conversation, Message
+
+    q, tab = request.GET.get("q", "").strip(), request.GET.get("tab", "all")
+    qs = Conversation.objects.filter(agency=request.agency).select_related("buyer", "listing", "order")
+    if q:
+        qs = qs.filter(Q(buyer__full_name__icontains=q) | Q(listing__title__icontains=q) | Q(order__reference__iexact=q))
+    rows = []
+    for c in qs.order_by("-last_message_at", "-id")[:200]:
+        last = c.messages.filter(deleted_at__isnull=True).order_by("-created_at", "-id").first()
+        waiting = bool(last and last.sender_role == Message.Role.BUYER)
+        if tab == "waiting" and not waiting:
+            continue
+        rows.append({"c": c, "last": last, "waiting": waiting, "unread": chat.unread_for(c, request.user)})
+    return render(request, "agencies/chats.html", _ctx(request, "chats", rows=rows, q=q, tab=tab,
+                                                       waiting=sum(1 for r in rows if r["waiting"]) if tab == "all" else len(rows)))
+
+
+@agency_required()
+def chat_detail(request, pk):
+    from apps.chat import services as chat
+    from apps.chat import web as chat_web
+    from apps.chat.models import Conversation
+
+    conv = get_object_or_404(Conversation.objects.select_related("buyer", "listing", "order"), pk=pk, agency=request.agency)
+    here = reverse("agency:chat", args=[pk])
+    if request.method == "GET" and chat_web.is_ajax(request):
+        return chat_web.render_messages(request, conv)
+    if request.method == "POST":
+        return chat_web.send_from_web(request, conv, here)
+    chat.mark_read(conv, request.user)
+    return render(request, "agencies/chat.html", _ctx(
+        request, "chats", c=conv, msgs=chat_web.thread_rows(conv, request.user, request), can_send=conv.status == "OPEN",
+        poll_url=here, send_url=here))
 
 
 # --------------------------------------------------------------------------- customers

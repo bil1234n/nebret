@@ -34,7 +34,7 @@ class NewCompanyBankAccountTests(TestCase):
         self.assertEqual(acc.verified_by, self.staff)
         self.assertLessEqual(acc.usable_from, timezone.now())  # first account: no cooling-off
         self.assertEqual(account_for_order(agency), acc)
-        self.assertEqual(list(acc.events.values_list("action", flat=True).order_by("id")), ["SUBMITTED", "APPROVED"])
+        self.assertEqual(list(acc.events.values_list("action", flat=True).order_by("id")), ["SUBMITTED", "APPROVED", "USABLE_NOW"])
 
     def test_bank_account_is_required_and_validated_on_create(self):
         r = self.client.post(reverse("console:agency_add"), _post(pay_bank="", pay_account_number=""))
@@ -46,7 +46,7 @@ class NewCompanyBankAccountTests(TestCase):
         self.assertIn("pay_swift", r.context["form"].errors)
         self.assertFalse(Agency.objects.filter(name="Abay Homes").exists())
 
-    def test_edit_replaces_the_account_after_cooling_off(self):
+    def test_edit_by_staff_replaces_the_account_at_once(self):
         agency = make_company()
         old = agency.bank_accounts.get()
         data = _post(name=agency.name, pay_account_number="1000999988887")
@@ -56,8 +56,10 @@ class NewCompanyBankAccountTests(TestCase):
         self.assertEqual(r.status_code, 302)
         new = agency.bank_accounts.exclude(pk=old.pk).get()
         self.assertEqual((new.status, new.replaces_id), (A.APPROVED, old.pk))
-        self.assertGreater(new.usable_from, timezone.now())
-        self.assertEqual(account_for_order(agency), old)  # still the old one until cooling-off ends
+        self.assertLessEqual(new.usable_from, timezone.now())  # Nebret entered it itself – no waiting period
+        self.assertEqual(account_for_order(agency), new)
+        old.refresh_from_db()
+        self.assertEqual(old.status, A.RETIRED)
 
     def test_edit_without_bank_fields_keeps_the_account(self):
         agency = make_company()
